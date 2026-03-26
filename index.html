@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Whiteboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: #16213e;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid #0f3460;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            color: #e94560;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .toolbar label {
+            font-size: 0.9rem;
+        }
+
+        input[type="color"] {
+            border: none;
+            width: 40px;
+            height: 35px;
+            cursor: pointer;
+            background: none;
+        }
+
+        input[type="range"] {
+            width: 100px;
+            cursor: pointer;
+        }
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .btn-clear {
+            background: #e94560;
+            color: white;
+        }
+
+        .btn-clear:hover {
+            background: #ff6b6b;
+        }
+
+        .btn-download {
+            background: #0f3460;
+            color: white;
+        }
+
+        .btn-download:hover {
+            background: #1a4f8a;
+        }
+
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            background: #0f0f1a;
+        }
+
+        canvas {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
+            cursor: crosshair;
+            max-width: 100%;
+            touch-action: none;
+        }
+
+        .status {
+            background: #16213e;
+            padding: 8px 20px;
+            font-size: 0.85rem;
+            color: #888;
+            text-align: center;
+        }
+
+        @media (max-width: 600px) {
+            header {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .toolbar {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🎨 Online Whiteboard</h1>
+        <div class="toolbar">
+            <label>
+                <input type="color" id="colorPicker" value="#000000" title="Brush Color">
+            </label>
+            <label>
+                <input type="range" id="brushSize" min="1" max="50" value="5" title="Brush Size">
+                <span id="sizeDisplay">5px</span>
+            </label>
+            <button class="btn-clear" onclick="clearCanvas()">Clear</button>
+            <button class="btn-download" onclick="downloadCanvas()">Download as Image</button>
+        </div>
+    </header>
+
+    <div class="canvas-container">
+        <canvas id="whiteboard" width="1200" height="700"></canvas>
+    </div>
+
+    <div class="status" id="status">Draw anything! ✏️</div>
+
+    <script>
+        const canvas = document.getElementById('whiteboard');
+        const ctx = canvas.getContext('2d');
+        const colorPicker = document.getElementById('colorPicker');
+        const brushSize = document.getElementById('brushSize');
+        const sizeDisplay = document.getElementById('sizeDisplay');
+        const status = document.getElementById('status');
+
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+
+        // Set initial drawing style
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = colorPicker.value;
+        ctx.lineWidth = brushSize.value;
+
+        // Update brush size display
+        brushSize.addEventListener('input', () => {
+            sizeDisplay.textContent = brushSize.value + 'px';
+            ctx.lineWidth = brushSize.value;
+        });
+
+        // Update brush color
+        colorPicker.addEventListener('input', () => {
+            ctx.strokeStyle = colorPicker.value;
+        });
+
+        // Get correct position for both mouse and touch
+        function getPosition(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            if (e.touches && e.touches.length > 0) {
+                return {
+                    x: (e.touches[0].clientX - rect.left) * scaleX,
+                    y: (e.touches[0].clientY - rect.top) * scaleY
+                };
+            }
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        // Mouse events
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            const pos = getPosition(e);
+            lastX = pos.x;
+            lastY = pos.y;
+            // Draw a dot for single click
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.fill();
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const pos = getPosition(e);
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            lastX = pos.x;
+            lastY = pos.y;
+        });
+
+        canvas.addEventListener('mouseup', () => isDrawing = false);
+        canvas.addEventListener('mouseout', () => isDrawing = false);
+
+        // Touch events
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            isDrawing = true;
+            const pos = getPosition(e);
+            lastX = pos.x;
+            lastY = pos.y;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.fill();
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!isDrawing) return;
+            const pos = getPosition(e);
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            lastX = pos.x;
+            lastY = pos.y;
+        });
+
+        canvas.addEventListener('touchend', () => isDrawing = false);
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            setStatus('Canvas cleared! 🧹');
+        }
+
+        function downloadCanvas() {
+            const link = document.createElement('a');
+            link.download = 'whiteboard-drawing.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            setStatus('Image downloaded! 📥');
+        }
+
+        function setStatus(msg) {
+            status.textContent = msg;
+            setTimeout(() => {
+                status.textContent = 'Draw anything! ✏️';
+            }, 3000);
+        }
+
+        // Resize canvas on window resize
+        function resizeCanvas() {
+            const container = document.querySelector('.canvas-container');
+            const maxWidth = container.clientWidth - 40;
+            const maxHeight = container.clientHeight - 40;
+            
+            const aspectRatio = 1200 / 700;
+            let newWidth = Math.min(1200, maxWidth);
+            let newHeight = newWidth / aspectRatio;
+            
+            if (newHeight > maxHeight) {
+                newHeight = maxHeight;
+                newWidth = newHeight * aspectRatio;
+            }
+            
+            canvas.style.width = newWidth + 'px';
+            canvas.style.height = newHeight + 'px';
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+    </script>
+</body>
+</html>
