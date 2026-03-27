@@ -1,291 +1,104 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Online Whiteboard</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #1a1a2e;
-            color: #eee;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-
-        header {
-            background: #16213e;
-            padding: 15px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 2px solid #0f3460;
-        }
-
-        h1 {
-            font-size: 1.4rem;
-            color: #e94560;
-        }
-
-        .toolbar {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .toolbar label {
-            font-size: 0.9rem;
-        }
-
-        input[type="color"] {
-            border: none;
-            width: 40px;
-            height: 35px;
-            cursor: pointer;
-            background: none;
-        }
-
-        input[type="range"] {
-            width: 100px;
-            cursor: pointer;
-        }
-
-        button {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.2s;
-        }
-
-        .btn-clear {
-            background: #e94560;
-            color: white;
-        }
-
-        .btn-clear:hover {
-            background: #ff6b6b;
-        }
-
-        .btn-download {
-            background: #0f3460;
-            color: white;
-        }
-
-        .btn-download:hover {
-            background: #1a4f8a;
-        }
-
-        .canvas-container {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            background: #0f0f1a;
-        }
-
-        canvas {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
-            cursor: crosshair;
-            max-width: 100%;
-            touch-action: none;
-        }
-
-        .status {
-            background: #16213e;
-            padding: 8px 20px;
-            font-size: 0.85rem;
-            color: #888;
-            text-align: center;
-        }
-
-        @media (max-width: 600px) {
-            header {
-                flex-direction: column;
-                gap: 10px;
-            }
-            .toolbar {
-                justify-content: center;
-            }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whiteboard</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <header>
-        <h1>🎨 Online Whiteboard</h1>
-        <div class="toolbar">
-            <label>
-                <input type="color" id="colorPicker" value="#000000" title="Brush Color">
-            </label>
-            <label>
-                <input type="range" id="brushSize" min="1" max="50" value="5" title="Brush Size">
-                <span id="sizeDisplay">5px</span>
-            </label>
-            <button class="btn-clear" onclick="clearCanvas()">Clear</button>
-            <button class="btn-download" onclick="downloadCanvas()">Download as Image</button>
-        </div>
-    </header>
-
-    <div class="canvas-container">
-        <canvas id="whiteboard" width="1200" height="700"></canvas>
+  <header>
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+          <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
+          <path d="M2 2l7.586 7.586"/>
+          <circle cx="11" cy="11" r="2"/>
+        </svg>
+      </div>
+      <h1>Whiteboard <span>beta</span></h1>
     </div>
 
-    <div class="status" id="status">Draw anything! ✏️</div>
+    <div class="toolbar">
+      <!-- Tools -->
+      <div class="toolbar-group">
+        <button class="tool-btn active" id="btnPen" title="Pen (B)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+            <path d="m15 5 4 4"/>
+          </svg>
+        </button>
+        <button class="tool-btn" id="btnEraser" title="Eraser (E)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/>
+            <path d="M22 21H7"/>
+            <path d="m5 11 9 9"/>
+          </svg>
+        </button>
+      </div>
 
-    <script>
-        const canvas = document.getElementById('whiteboard');
-        const ctx = canvas.getContext('2d');
-        const colorPicker = document.getElementById('colorPicker');
-        const brushSize = document.getElementById('brushSize');
-        const sizeDisplay = document.getElementById('sizeDisplay');
-        const status = document.getElementById('status');
+      <div class="toolbar-divider"></div>
 
-        let isDrawing = false;
-        let lastX = 0;
-        let lastY = 0;
+      <!-- Color -->
+      <div class="toolbar-group">
+        <div class="color-wrapper">
+          <div class="color-swatch" id="colorSwatch" style="background: #000000"></div>
+          <input type="color" id="colorPicker" value="#000000" title="Color">
+        </div>
+      </div>
 
-        // Set initial drawing style
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.strokeStyle = colorPicker.value;
-        ctx.lineWidth = brushSize.value;
+      <div class="toolbar-divider"></div>
 
-        // Update brush size display
-        brushSize.addEventListener('input', () => {
-            sizeDisplay.textContent = brushSize.value + 'px';
-            ctx.lineWidth = brushSize.value;
-        });
+      <!-- Brush size -->
+      <div class="size-control">
+        <input type="range" id="brushSize" min="1" max="50" value="4" title="Size">
+        <span class="size-value" id="sizeValue">4px</span>
+      </div>
 
-        // Update brush color
-        colorPicker.addEventListener('input', () => {
-            ctx.strokeStyle = colorPicker.value;
-        });
+      <div class="toolbar-divider"></div>
 
-        // Get correct position for both mouse and touch
-        function getPosition(e) {
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
+      <!-- Undo -->
+      <div class="toolbar-group">
+        <button class="tool-btn" onclick="undo()" title="Undo (Ctrl+Z)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7v6h6"/>
+            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
+          </svg>
+        </button>
+      </div>
+    </div>
 
-            if (e.touches && e.touches.length > 0) {
-                return {
-                    x: (e.touches[0].clientX - rect.left) * scaleX,
-                    y: (e.touches[0].clientY - rect.top) * scaleY
-                };
-            }
-            return {
-                x: (e.clientX - rect.left) * scaleX,
-                y: (e.clientY - rect.top) * scaleY
-            };
-        }
+    <div class="actions">
+      <button class="btn btn-danger" onclick="clearCanvas()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+        </svg>
+        <span class="label">Clear</span>
+      </button>
+      <button class="btn btn-accent" onclick="downloadCanvas()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        <span class="label">Export</span>
+      </button>
+    </div>
+  </header>
 
-        // Mouse events
-        canvas.addEventListener('mousedown', (e) => {
-            isDrawing = true;
-            const pos = getPosition(e);
-            lastX = pos.x;
-            lastY = pos.y;
-            // Draw a dot for single click
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, ctx.lineWidth / 2, 0, Math.PI * 2);
-            ctx.fillStyle = ctx.strokeStyle;
-            ctx.fill();
-        });
+  <div class="canvas-container">
+    <canvas id="whiteboard" width="1200" height="700"></canvas>
+  </div>
 
-        canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing) return;
-            const pos = getPosition(e);
-            ctx.beginPath();
-            ctx.moveTo(lastX, lastY);
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
-            lastX = pos.x;
-            lastY = pos.y;
-        });
+  <div class="status-bar">
+    <span class="status-msg" id="statusMsg">Ready</span>
+    <span class="status-coords" id="statusCoords">0, 0</span>
+  </div>
 
-        canvas.addEventListener('mouseup', () => isDrawing = false);
-        canvas.addEventListener('mouseout', () => isDrawing = false);
+  <div class="toast" id="toast"></div>
 
-        // Touch events
-        canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            isDrawing = true;
-            const pos = getPosition(e);
-            lastX = pos.x;
-            lastY = pos.y;
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, ctx.lineWidth / 2, 0, Math.PI * 2);
-            ctx.fillStyle = ctx.strokeStyle;
-            ctx.fill();
-        });
-
-        canvas.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            if (!isDrawing) return;
-            const pos = getPosition(e);
-            ctx.beginPath();
-            ctx.moveTo(lastX, lastY);
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
-            lastX = pos.x;
-            lastY = pos.y;
-        });
-
-        canvas.addEventListener('touchend', () => isDrawing = false);
-
-        function clearCanvas() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            setStatus('Canvas cleared! 🧹');
-        }
-
-        function downloadCanvas() {
-            const link = document.createElement('a');
-            link.download = 'whiteboard-drawing.png';
-            link.href = canvas.toDataURL('image/png');
-            link.click();
-            setStatus('Image downloaded! 📥');
-        }
-
-        function setStatus(msg) {
-            status.textContent = msg;
-            setTimeout(() => {
-                status.textContent = 'Draw anything! ✏️';
-            }, 3000);
-        }
-
-        // Resize canvas on window resize
-        function resizeCanvas() {
-            const container = document.querySelector('.canvas-container');
-            const maxWidth = container.clientWidth - 40;
-            const maxHeight = container.clientHeight - 40;
-            
-            const aspectRatio = 1200 / 700;
-            let newWidth = Math.min(1200, maxWidth);
-            let newHeight = newWidth / aspectRatio;
-            
-            if (newHeight > maxHeight) {
-                newHeight = maxHeight;
-                newWidth = newHeight * aspectRatio;
-            }
-            
-            canvas.style.width = newWidth + 'px';
-            canvas.style.height = newHeight + 'px';
-        }
-
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-    </script>
+  <script src="whiteboard.js"></script>
 </body>
 </html>
