@@ -2,7 +2,7 @@
 
 A minimal, browser-based drawing tool with a dark creative-studio aesthetic. Built for educators and trainers.
 
-![Whiteboard Screenshot](screenshot.png)
+![Whiteboard Screenshot](preview.png)
 
 ## Features
 
