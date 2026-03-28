@@ -24,30 +24,31 @@ let pages = []; // each: { data: dataURL, undoStack: string[] }
 let currentPage = 0;
 const MAX_UNDO = 30;
 
-// Create first page
-addPage(false);
-
 // ─── Init Canvas ───
 ctx.lineCap = 'round';
 ctx.lineJoin = 'round';
 ctx.strokeStyle = colorPicker.value;
 ctx.lineWidth = brushSize.value;
 
+// Fill canvas white initially
+ctx.fillStyle = '#ffffff';
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+ctx.fillStyle = colorPicker.value;
+
+// Create first page (after canvas is initialized)
+pages.push({ data: canvas.toDataURL(), undoStack: [canvas.toDataURL()] });
+renderPageStrip();
+
 // ─── Page Management ───
-function addPage(switchTo = true) {
+function addPage() {
   // Save current page before adding
-  if (pages.length > 0 && switchTo) {
-    saveCurrentPageData();
-  }
+  saveCurrentPageData();
 
   const blankData = createBlankDataURL();
   pages.push({ data: blankData, undoStack: [blankData] });
 
-  if (switchTo) {
-    currentPage = pages.length - 1;
-    loadPage(currentPage);
-  }
-
+  currentPage = pages.length - 1;
+  loadPage(currentPage);
   renderPageStrip();
   showToast(`Page ${pages.length} added`);
 }
@@ -159,7 +160,7 @@ function renderPageStrip() {
   updateStatusPage();
 }
 
-btnAddPage.addEventListener('click', () => addPage(true));
+btnAddPage.addEventListener('click', addPage);
 
 // ─── Undo (per-page) ───
 function saveUndoState() {
@@ -180,8 +181,7 @@ function undo() {
     if (currentTool === 'eraser') {
       ctx.globalCompositeOperation = 'destination-out';
     }
-    pages[currentPage].data = canvas.toDataURL();
-    renderPageStrip();
+    updateCurrentThumbnail();
   };
   img.src = page.undoStack[page.undoStack.length - 1];
   showToast('Undone');
@@ -265,10 +265,16 @@ function stopDraw() {
   if (isDrawing) {
     isDrawing = false;
     saveUndoState();
-    // Update thumbnail
-    pages[currentPage].data = canvas.toDataURL();
-    renderPageStrip();
+    // Update thumbnail without full re-render
+    updateCurrentThumbnail();
   }
+}
+
+function updateCurrentThumbnail() {
+  const dataURL = canvas.toDataURL();
+  pages[currentPage].data = dataURL;
+  const thumbImg = pageStripInner.querySelectorAll('.page-thumb img')[currentPage];
+  if (thumbImg) thumbImg.src = dataURL;
 }
 
 // Mouse events
@@ -297,17 +303,25 @@ function clearCanvas() {
     ctx.globalCompositeOperation = 'destination-out';
   }
   saveUndoState();
-  pages[currentPage].data = canvas.toDataURL();
-  renderPageStrip();
+  updateCurrentThumbnail();
   showToast('Page cleared');
 }
 
-function downloadCanvas() {
-  const link = document.createElement('a');
-  link.download = `whiteboard-page${currentPage + 1}-${Date.now()}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-  showToast('Image saved');
+function exportPDF() {
+  // Save current page first
+  saveCurrentPageData();
+
+  const { jsPDF } = window.jspdf;
+  // Landscape orientation matching canvas aspect ratio
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvas.width, canvas.height] });
+
+  pages.forEach((page, i) => {
+    if (i > 0) pdf.addPage([canvas.width, canvas.height], 'landscape');
+    pdf.addImage(page.data, 'PNG', 0, 0, canvas.width, canvas.height);
+  });
+
+  pdf.save(`whiteboard-${pages.length}pages-${Date.now()}.pdf`);
+  showToast(`Exported ${pages.length} page${pages.length > 1 ? 's' : ''} as PDF`);
 }
 
 // ─── Toast ───
