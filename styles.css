@@ -549,6 +549,15 @@ canvas:hover {
   letter-spacing: 0.01em;
 }
 
+.status-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.status-footer a:hover {
+  text-decoration: underline;
+}
+
 .status-coords {
   font-family: var(--font-mono);
   font-size: 0.68rem;
