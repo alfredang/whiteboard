@@ -36,6 +36,13 @@
             <path d="m5 11 9 9"/>
           </svg>
         </button>
+        <button class="tool-btn" id="btnLasso" title="Lasso Delete (L)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 22a5 5 0 0 1-2-4"/>
+            <path d="M3.3 14A6.8 6.8 0 0 1 2 10c0-4.4 4.5-8 10-8s10 3.6 10 8-4.5 8-10 8a12 12 0 0 1-5-1"/>
+            <path d="M5 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>
+          </svg>
+        </button>
       </div>
 
       <div class="toolbar-divider"></div>
@@ -50,8 +57,9 @@
 
       <div class="toolbar-divider"></div>
 
-      <!-- Brush size -->
+      <!-- Brush / Eraser size -->
       <div class="size-control">
+        <span class="size-label" id="sizeLabel">Pen</span>
         <input type="range" id="brushSize" min="1" max="50" value="4" title="Size">
         <span class="size-value" id="sizeValue">4px</span>
       </div>

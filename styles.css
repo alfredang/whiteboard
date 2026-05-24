@@ -253,6 +253,16 @@ header {
   text-align: right;
 }
 
+.size-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  min-width: 32px;
+}
+
 /* Action buttons */
 .actions {
   display: flex;
@@ -568,6 +578,14 @@ canvas:hover {
 /* ─── Eraser cursor ─── */
 canvas.eraser-cursor {
   cursor: none;
+}
+
+canvas.lasso-cursor {
+  cursor: crosshair;
+}
+
+.lasso-overlay {
+  border-radius: var(--radius);
 }
 
 /* ─── Toast notification ─── */

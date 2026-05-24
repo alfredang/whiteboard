@@ -12,12 +12,23 @@ const btnAddPage = document.getElementById('btnAddPage');
 
 const btnPen = document.getElementById('btnPen');
 const btnEraser = document.getElementById('btnEraser');
+const btnLasso = document.getElementById('btnLasso');
+const sizeLabel = document.getElementById('sizeLabel');
 
 // ─── State ───
 let isDrawing = false;
 let lastX = 0;
 let lastY = 0;
-let currentTool = 'pen'; // 'pen' | 'eraser'
+let currentTool = 'pen'; // 'pen' | 'eraser' | 'lasso'
+
+// Per-tool sizes
+const toolSizes = { pen: 4, eraser: 20 };
+const toolSizeRange = { pen: { min: 1, max: 50 }, eraser: { min: 5, max: 120 } };
+
+// Lasso state
+let lassoPoints = [];
+let lassoOverlay = null;
+let lassoCtx = null;
 
 // ─── Pages ───
 let pages = []; // each: { data: dataURL, undoStack: string[] }
@@ -192,23 +203,51 @@ function setTool(tool) {
   currentTool = tool;
   btnPen.classList.toggle('active', tool === 'pen');
   btnEraser.classList.toggle('active', tool === 'eraser');
+  btnLasso.classList.toggle('active', tool === 'lasso');
   canvas.classList.toggle('eraser-cursor', tool === 'eraser');
+  canvas.classList.toggle('lasso-cursor', tool === 'lasso');
 
   if (tool === 'pen') {
     ctx.globalCompositeOperation = 'source-over';
     ctx.strokeStyle = colorPicker.value;
-  } else {
+  } else if (tool === 'eraser') {
     ctx.globalCompositeOperation = 'destination-out';
+  } else {
+    ctx.globalCompositeOperation = 'source-over';
   }
+
+  syncSizeControl();
+}
+
+function syncSizeControl() {
+  if (currentTool === 'lasso') {
+    sizeLabel.textContent = 'Lasso';
+    brushSize.disabled = true;
+    sizeValue.textContent = '—';
+    return;
+  }
+  brushSize.disabled = false;
+  const range = toolSizeRange[currentTool];
+  brushSize.min = range.min;
+  brushSize.max = range.max;
+  brushSize.value = toolSizes[currentTool];
+  sizeLabel.textContent = currentTool === 'pen' ? 'Pen' : 'Eraser';
+  sizeValue.textContent = brushSize.value + 'px';
+  ctx.lineWidth = brushSize.value;
 }
 
 btnPen.addEventListener('click', () => setTool('pen'));
 btnEraser.addEventListener('click', () => setTool('eraser'));
+btnLasso.addEventListener('click', () => setTool('lasso'));
 
 // ─── Brush Size ───
 brushSize.addEventListener('input', () => {
-  sizeValue.textContent = brushSize.value + 'px';
-  ctx.lineWidth = brushSize.value;
+  const val = parseInt(brushSize.value, 10);
+  if (currentTool === 'pen' || currentTool === 'eraser') {
+    toolSizes[currentTool] = val;
+  }
+  sizeValue.textContent = val + 'px';
+  ctx.lineWidth = val;
 });
 
 // ─── Color Picker ───
@@ -236,10 +275,88 @@ function getPosition(e) {
   };
 }
 
+// ─── Lasso overlay ───
+function ensureLassoOverlay() {
+  if (lassoOverlay) return;
+  lassoOverlay = document.createElement('canvas');
+  lassoOverlay.className = 'lasso-overlay';
+  lassoOverlay.width = canvas.width;
+  lassoOverlay.height = canvas.height;
+  canvas.parentElement.appendChild(lassoOverlay);
+  lassoCtx = lassoOverlay.getContext('2d');
+  syncLassoOverlayStyle();
+}
+
+function syncLassoOverlayStyle() {
+  if (!lassoOverlay) return;
+  const rect = canvas.getBoundingClientRect();
+  const parentRect = canvas.parentElement.getBoundingClientRect();
+  lassoOverlay.style.position = 'absolute';
+  lassoOverlay.style.left = (rect.left - parentRect.left) + 'px';
+  lassoOverlay.style.top = (rect.top - parentRect.top) + 'px';
+  lassoOverlay.style.width = rect.width + 'px';
+  lassoOverlay.style.height = rect.height + 'px';
+  lassoOverlay.style.pointerEvents = 'none';
+  lassoOverlay.style.zIndex = '5';
+}
+
+function drawLassoPreview() {
+  if (!lassoCtx || lassoPoints.length < 2) return;
+  lassoCtx.clearRect(0, 0, lassoOverlay.width, lassoOverlay.height);
+  lassoCtx.save();
+  lassoCtx.strokeStyle = '#e87040';
+  lassoCtx.lineWidth = 1.5;
+  lassoCtx.setLineDash([6, 4]);
+  lassoCtx.beginPath();
+  lassoCtx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
+  for (let i = 1; i < lassoPoints.length; i++) {
+    lassoCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
+  }
+  lassoCtx.stroke();
+  lassoCtx.fillStyle = 'rgba(232, 112, 64, 0.12)';
+  lassoCtx.fill();
+  lassoCtx.restore();
+}
+
+function commitLasso() {
+  if (lassoPoints.length < 3) {
+    if (lassoCtx) lassoCtx.clearRect(0, 0, lassoOverlay.width, lassoOverlay.height);
+    lassoPoints = [];
+    return;
+  }
+  // Erase pixels inside polygon by painting white (canvas background)
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.beginPath();
+  ctx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
+  for (let i = 1; i < lassoPoints.length; i++) {
+    ctx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.restore();
+
+  if (lassoCtx) lassoCtx.clearRect(0, 0, lassoOverlay.width, lassoOverlay.height);
+  lassoPoints = [];
+  saveUndoState();
+  updateCurrentThumbnail();
+  showToast('Region deleted');
+}
+
 // ─── Drawing ───
 function startDraw(e) {
-  isDrawing = true;
   const pos = getPosition(e);
+
+  if (currentTool === 'lasso') {
+    ensureLassoOverlay();
+    syncLassoOverlayStyle();
+    isDrawing = true;
+    lassoPoints = [pos];
+    return;
+  }
+
+  isDrawing = true;
   lastX = pos.x;
   lastY = pos.y;
   ctx.beginPath();
@@ -253,6 +370,16 @@ function startDraw(e) {
 function draw(e) {
   if (!isDrawing) return;
   const pos = getPosition(e);
+
+  if (currentTool === 'lasso') {
+    const last = lassoPoints[lassoPoints.length - 1];
+    if (!last || Math.hypot(pos.x - last.x, pos.y - last.y) > 2) {
+      lassoPoints.push(pos);
+      drawLassoPreview();
+    }
+    return;
+  }
+
   ctx.beginPath();
   ctx.moveTo(lastX, lastY);
   ctx.lineTo(pos.x, pos.y);
@@ -262,12 +389,16 @@ function draw(e) {
 }
 
 function stopDraw() {
-  if (isDrawing) {
-    isDrawing = false;
-    saveUndoState();
-    // Update thumbnail without full re-render
-    updateCurrentThumbnail();
+  if (!isDrawing) return;
+  isDrawing = false;
+
+  if (currentTool === 'lasso') {
+    commitLasso();
+    return;
   }
+
+  saveUndoState();
+  updateCurrentThumbnail();
 }
 
 function updateCurrentThumbnail() {
@@ -341,6 +472,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === 'b' && !e.ctrlKey && !e.metaKey) setTool('pen');
   if (e.key === 'e' && !e.ctrlKey && !e.metaKey) setTool('eraser');
+  if (e.key === 'l' && !e.ctrlKey && !e.metaKey) setTool('lasso');
 
   // Page navigation: PgUp/PgDn or Ctrl+Left/Right
   if (e.key === 'PageUp' || ((e.ctrlKey || e.metaKey) && e.key === 'ArrowLeft')) {
@@ -370,6 +502,7 @@ function resizeCanvas() {
 
   canvas.style.width = newWidth + 'px';
   canvas.style.height = newHeight + 'px';
+  syncLassoOverlayStyle();
 }
 
 window.addEventListener('resize', resizeCanvas);
