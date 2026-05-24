@@ -33,12 +33,31 @@ const toolSizeRange = { pen: { min: 1, max: 50 }, eraser: { min: 5, max: 120 } }
 
 // Lasso state
 let lassoPoints = [];
-let lassoSnapshot = null; // ImageData of canvas before lasso preview
 let previousTool = 'pen';
 
-// Line state
+// Line / circle state
 let lineStart = null;
-let lineSnapshot = null;
+
+// Offscreen snapshot canvas used to restore the pre-shape state each frame
+const snapCanvas = document.createElement('canvas');
+snapCanvas.width = canvas.width;
+snapCanvas.height = canvas.height;
+const snapCtx = snapCanvas.getContext('2d');
+let hasSnapshot = false;
+
+function takeSnapshot() {
+  snapCtx.clearRect(0, 0, snapCanvas.width, snapCanvas.height);
+  snapCtx.drawImage(canvas, 0, 0);
+  hasSnapshot = true;
+}
+function restoreSnapshot() {
+  if (!hasSnapshot) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(snapCanvas, 0, 0);
+  ctx.restore();
+}
 
 // ─── Pages ───
 let pages = []; // each: { data: dataURL, undoStack: string[] }
@@ -347,9 +366,8 @@ function getPosition(e) {
 
 // ─── Lasso (preview drawn directly on main canvas) ───
 function drawLassoPreview() {
-  if (!lassoSnapshot || lassoPoints.length < 2) return;
-  // Restore the pre-lasso canvas state, then draw preview on top
-  ctx.putImageData(lassoSnapshot, 0, 0);
+  if (lassoPoints.length < 2) return;
+  restoreSnapshot();
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.strokeStyle = '#e87040';
@@ -368,8 +386,8 @@ function drawLassoPreview() {
 }
 
 function commitLasso() {
-  // Restore snapshot so preview is gone
-  if (lassoSnapshot) ctx.putImageData(lassoSnapshot, 0, 0);
+  // Restore pre-lasso state to remove the preview overlay
+  restoreSnapshot();
 
   if (lassoPoints.length >= 3) {
     ctx.save();
@@ -389,7 +407,7 @@ function commitLasso() {
   }
 
   lassoPoints = [];
-  lassoSnapshot = null;
+  hasSnapshot = false;
   // Auto-revert to previous tool so user can keep drawing
   setTool(previousTool === 'lasso' ? 'pen' : previousTool);
 }
@@ -400,7 +418,7 @@ function startDraw(e) {
 
   if (currentTool === 'lasso') {
     isDrawing = true;
-    lassoSnapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    takeSnapshot();
     lassoPoints = [pos];
     return;
   }
@@ -408,7 +426,7 @@ function startDraw(e) {
   if (currentTool === 'line' || currentTool === 'circle') {
     isDrawing = true;
     lineStart = pos;
-    lineSnapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    takeSnapshot();
     return;
   }
 
@@ -437,7 +455,7 @@ function draw(e) {
   }
 
   if (currentTool === 'line') {
-    ctx.putImageData(lineSnapshot, 0, 0);
+    restoreSnapshot();
     ctx.beginPath();
     ctx.moveTo(lineStart.x, lineStart.y);
     ctx.lineTo(pos.x, pos.y);
@@ -446,7 +464,7 @@ function draw(e) {
   }
 
   if (currentTool === 'circle') {
-    ctx.putImageData(lineSnapshot, 0, 0);
+    restoreSnapshot();
     const cx = (lineStart.x + pos.x) / 2;
     const cy = (lineStart.y + pos.y) / 2;
     const rx = Math.abs(pos.x - lineStart.x) / 2;
@@ -476,7 +494,7 @@ function stopDraw() {
 
   if (currentTool === 'line' || currentTool === 'circle') {
     lineStart = null;
-    lineSnapshot = null;
+    hasSnapshot = false;
   }
 
   saveUndoState();

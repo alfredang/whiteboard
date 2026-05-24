@@ -599,10 +599,9 @@ canvas.lasso-cursor {
   cursor: crosshair;
 }
 
-/* Theme toggle icon swap */
-#btnTheme .icon-sun { display: none; }
-body.light-theme #btnTheme .icon-moon { display: none; }
-body.light-theme #btnTheme .icon-sun { display: block; }
+/* Theme toggle icon */
+#btnTheme svg { transition: transform var(--transition); }
+body.light-theme #btnTheme svg { transform: rotate(180deg); }
 
 /* ─── Toast notification ─── */
 .toast {
