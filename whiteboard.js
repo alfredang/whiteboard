@@ -63,6 +63,36 @@ function restoreSnapshot() {
 let pages = []; // each: { data: dataURL, undoStack: string[] }
 let currentPage = 0;
 const MAX_UNDO = 30;
+const STORAGE_KEY = 'whiteboard.state.v1';
+
+let saveTimer;
+function persistState() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      const payload = {
+        theme,
+        currentPage,
+        pages: pages.map(p => ({ data: p.data })),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (err) {
+      // Quota exceeded or storage unavailable — fail silently
+    }
+  }, 250);
+}
+
+function loadPersistedState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.pages) || parsed.pages.length === 0) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Init Canvas ───
 ctx.lineCap = 'round';
@@ -75,8 +105,20 @@ ctx.fillStyle = canvasBgColor();
 ctx.fillRect(0, 0, canvas.width, canvas.height);
 ctx.fillStyle = colorPicker.value;
 
-// Create first page (after canvas is initialized)
-pages.push({ data: canvas.toDataURL(), undoStack: [canvas.toDataURL()] });
+// Restore from localStorage if present, otherwise create a blank first page
+const persisted = loadPersistedState();
+if (persisted) {
+  theme = persisted.theme === 'light' ? 'light' : 'dark';
+  document.body.classList.toggle('light-theme', theme === 'light');
+  // Re-paint background to match restored theme before loading page bitmaps
+  ctx.fillStyle = canvasBgColor();
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  pages = persisted.pages.map(p => ({ data: p.data, undoStack: [p.data] }));
+  currentPage = Math.min(persisted.currentPage || 0, pages.length - 1);
+  loadPage(currentPage);
+} else {
+  pages.push({ data: canvas.toDataURL(), undoStack: [canvas.toDataURL()] });
+}
 renderPageStrip();
 
 // ─── Page Management ───
@@ -90,6 +132,7 @@ function addPage() {
   currentPage = pages.length - 1;
   loadPage(currentPage);
   renderPageStrip();
+  persistState();
   showToast(`Page ${pages.length} added`);
 }
 
@@ -109,6 +152,7 @@ function deletePage(index) {
 
   loadPage(currentPage);
   renderPageStrip();
+  persistState();
   showToast('Page deleted');
 }
 
@@ -118,6 +162,7 @@ function switchPage(index) {
   currentPage = index;
   loadPage(index);
   renderPageStrip();
+  persistState();
 }
 
 function saveCurrentPageData() {
@@ -325,6 +370,7 @@ async function toggleTheme() {
 
   loadPage(currentPage);
   renderPageStrip();
+  persistState();
   showToast(theme === 'light' ? 'Chalkboard mode' : 'Whiteboard mode');
 }
 
@@ -506,6 +552,7 @@ function updateCurrentThumbnail() {
   pages[currentPage].data = dataURL;
   const thumbImg = pageStripInner.querySelectorAll('.page-thumb img')[currentPage];
   if (thumbImg) thumbImg.src = dataURL;
+  persistState();
 }
 
 // Mouse events
