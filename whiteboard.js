@@ -13,6 +13,8 @@ const btnAddPage = document.getElementById('btnAddPage');
 const btnPen = document.getElementById('btnPen');
 const btnEraser = document.getElementById('btnEraser');
 const btnLasso = document.getElementById('btnLasso');
+const btnLine = document.getElementById('btnLine');
+const btnCircle = document.getElementById('btnCircle');
 const btnTheme = document.getElementById('btnTheme');
 const sizeLabel = document.getElementById('sizeLabel');
 
@@ -33,6 +35,10 @@ const toolSizeRange = { pen: { min: 1, max: 50 }, eraser: { min: 5, max: 120 } }
 let lassoPoints = [];
 let lassoSnapshot = null; // ImageData of canvas before lasso preview
 let previousTool = 'pen';
+
+// Line state
+let lineStart = null;
+let lineSnapshot = null;
 
 // ─── Pages ───
 let pages = []; // each: { data: dataURL, undoStack: string[] }
@@ -211,16 +217,17 @@ function setTool(tool) {
   btnPen.classList.toggle('active', tool === 'pen');
   btnEraser.classList.toggle('active', tool === 'eraser');
   btnLasso.classList.toggle('active', tool === 'lasso');
+  btnLine.classList.toggle('active', tool === 'line');
+  btnCircle.classList.toggle('active', tool === 'circle');
   canvas.classList.toggle('eraser-cursor', tool === 'eraser');
   canvas.classList.toggle('lasso-cursor', tool === 'lasso');
 
-  if (tool === 'pen') {
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.strokeStyle = colorPicker.value;
-  } else if (tool === 'eraser') {
+  if (tool === 'eraser') {
     ctx.globalCompositeOperation = 'destination-out';
   } else {
+    // pen / line / circle / lasso
     ctx.globalCompositeOperation = 'source-over';
+    if (tool !== 'lasso') ctx.strokeStyle = colorPicker.value;
   }
 
   syncSizeControl();
@@ -234,11 +241,14 @@ function syncSizeControl() {
     return;
   }
   brushSize.disabled = false;
-  const range = toolSizeRange[currentTool];
+  // line/circle share pen's size settings
+  const sizeKey = (currentTool === 'eraser') ? 'eraser' : 'pen';
+  const range = toolSizeRange[sizeKey];
   brushSize.min = range.min;
   brushSize.max = range.max;
-  brushSize.value = toolSizes[currentTool];
-  sizeLabel.textContent = currentTool === 'pen' ? 'Pen' : 'Eraser';
+  brushSize.value = toolSizes[sizeKey];
+  const labels = { pen: 'Pen', eraser: 'Eraser', line: 'Line', circle: 'Circle' };
+  sizeLabel.textContent = labels[currentTool] || 'Size';
   sizeValue.textContent = brushSize.value + 'px';
   ctx.lineWidth = brushSize.value;
 }
@@ -246,6 +256,8 @@ function syncSizeControl() {
 btnPen.addEventListener('click', () => setTool('pen'));
 btnEraser.addEventListener('click', () => setTool('eraser'));
 btnLasso.addEventListener('click', () => setTool('lasso'));
+btnLine.addEventListener('click', () => setTool('line'));
+btnCircle.addEventListener('click', () => setTool('circle'));
 
 // ─── Theme Toggle (inverts canvas: white ↔ black) ───
 function invertImageDataURL(dataURL) {
@@ -302,9 +314,8 @@ btnTheme.addEventListener('click', toggleTheme);
 // ─── Brush Size ───
 brushSize.addEventListener('input', () => {
   const val = parseInt(brushSize.value, 10);
-  if (currentTool === 'pen' || currentTool === 'eraser') {
-    toolSizes[currentTool] = val;
-  }
+  const key = currentTool === 'eraser' ? 'eraser' : 'pen';
+  toolSizes[key] = val;
   sizeValue.textContent = val + 'px';
   ctx.lineWidth = val;
 });
@@ -394,6 +405,13 @@ function startDraw(e) {
     return;
   }
 
+  if (currentTool === 'line' || currentTool === 'circle') {
+    isDrawing = true;
+    lineStart = pos;
+    lineSnapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return;
+  }
+
   isDrawing = true;
   lastX = pos.x;
   lastY = pos.y;
@@ -418,6 +436,27 @@ function draw(e) {
     return;
   }
 
+  if (currentTool === 'line') {
+    ctx.putImageData(lineSnapshot, 0, 0);
+    ctx.beginPath();
+    ctx.moveTo(lineStart.x, lineStart.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    return;
+  }
+
+  if (currentTool === 'circle') {
+    ctx.putImageData(lineSnapshot, 0, 0);
+    const cx = (lineStart.x + pos.x) / 2;
+    const cy = (lineStart.y + pos.y) / 2;
+    const rx = Math.abs(pos.x - lineStart.x) / 2;
+    const ry = Math.abs(pos.y - lineStart.y) / 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    return;
+  }
+
   ctx.beginPath();
   ctx.moveTo(lastX, lastY);
   ctx.lineTo(pos.x, pos.y);
@@ -433,6 +472,11 @@ function stopDraw() {
   if (currentTool === 'lasso') {
     commitLasso();
     return;
+  }
+
+  if (currentTool === 'line' || currentTool === 'circle') {
+    lineStart = null;
+    lineSnapshot = null;
   }
 
   saveUndoState();
@@ -510,6 +554,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'b' && !e.ctrlKey && !e.metaKey) setTool('pen');
   if (e.key === 'e' && !e.ctrlKey && !e.metaKey) setTool('eraser');
   if (e.key === 'l' && !e.ctrlKey && !e.metaKey) setTool('lasso');
+  if (e.key === 'i' && !e.ctrlKey && !e.metaKey) setTool('line');
+  if (e.key === 'o' && !e.ctrlKey && !e.metaKey) setTool('circle');
   if (e.key === 't' && !e.ctrlKey && !e.metaKey) toggleTheme();
 
   // Page navigation: PgUp/PgDn or Ctrl+Left/Right
