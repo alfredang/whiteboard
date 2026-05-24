@@ -22,12 +22,27 @@
   --accent-hover: #f08050;
   --danger: #e05454;
   --danger-soft: rgba(224, 84, 84, 0.12);
+  --canvas-bg: #ffffff;
   --canvas-shadow: rgba(232, 112, 64, 0.06);
   --radius: 10px;
   --radius-sm: 6px;
   --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body.light-theme {
+  --bg-deep: #f4f4f7;
+  --bg-surface: #ffffff;
+  --bg-raised: #f0f0f4;
+  --bg-hover: #e6e6ec;
+  --border-subtle: #dcdce4;
+  --border-focus: #c4c4ce;
+  --text-primary: #1a1a22;
+  --text-secondary: #5a5a6a;
+  --text-muted: #8a8a9a;
+  --canvas-bg: #0c0c0f;
+  --canvas-shadow: rgba(0, 0, 0, 0.18);
 }
 
 body {
@@ -508,7 +523,7 @@ header {
 }
 
 canvas {
-  background: #ffffff;
+  background: var(--canvas-bg);
   border-radius: var(--radius);
   box-shadow:
     0 0 0 1px rgba(255,255,255,0.04),
@@ -584,9 +599,10 @@ canvas.lasso-cursor {
   cursor: crosshair;
 }
 
-.lasso-overlay {
-  border-radius: var(--radius);
-}
+/* Theme toggle icon swap */
+#btnTheme .icon-sun { display: none; }
+body.light-theme #btnTheme .icon-moon { display: none; }
+body.light-theme #btnTheme .icon-sun { display: block; }
 
 /* ─── Toast notification ─── */
 .toast {

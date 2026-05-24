@@ -13,7 +13,11 @@ const btnAddPage = document.getElementById('btnAddPage');
 const btnPen = document.getElementById('btnPen');
 const btnEraser = document.getElementById('btnEraser');
 const btnLasso = document.getElementById('btnLasso');
+const btnTheme = document.getElementById('btnTheme');
 const sizeLabel = document.getElementById('sizeLabel');
+
+let theme = 'dark'; // 'dark' = white canvas, 'light' = black canvas
+function canvasBgColor() { return theme === 'dark' ? '#ffffff' : '#0c0c0f'; }
 
 // ─── State ───
 let isDrawing = false;
@@ -27,8 +31,8 @@ const toolSizeRange = { pen: { min: 1, max: 50 }, eraser: { min: 5, max: 120 } }
 
 // Lasso state
 let lassoPoints = [];
-let lassoOverlay = null;
-let lassoCtx = null;
+let lassoSnapshot = null; // ImageData of canvas before lasso preview
+let previousTool = 'pen';
 
 // ─── Pages ───
 let pages = []; // each: { data: dataURL, undoStack: string[] }
@@ -41,8 +45,8 @@ ctx.lineJoin = 'round';
 ctx.strokeStyle = colorPicker.value;
 ctx.lineWidth = brushSize.value;
 
-// Fill canvas white initially
-ctx.fillStyle = '#ffffff';
+// Fill canvas background initially
+ctx.fillStyle = canvasBgColor();
 ctx.fillRect(0, 0, canvas.width, canvas.height);
 ctx.fillStyle = colorPicker.value;
 
@@ -116,7 +120,7 @@ function createBlankDataURL() {
   tmp.width = canvas.width;
   tmp.height = canvas.height;
   const tmpCtx = tmp.getContext('2d');
-  tmpCtx.fillStyle = '#ffffff';
+  tmpCtx.fillStyle = canvasBgColor();
   tmpCtx.fillRect(0, 0, tmp.width, tmp.height);
   return tmp.toDataURL();
 }
@@ -200,6 +204,9 @@ function undo() {
 
 // ─── Tool Switching ───
 function setTool(tool) {
+  if (tool === 'lasso' && currentTool !== 'lasso') {
+    previousTool = currentTool;
+  }
   currentTool = tool;
   btnPen.classList.toggle('active', tool === 'pen');
   btnEraser.classList.toggle('active', tool === 'eraser');
@@ -240,6 +247,58 @@ btnPen.addEventListener('click', () => setTool('pen'));
 btnEraser.addEventListener('click', () => setTool('eraser'));
 btnLasso.addEventListener('click', () => setTool('lasso'));
 
+// ─── Theme Toggle (inverts canvas: white ↔ black) ───
+function invertImageDataURL(dataURL) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const tmp = document.createElement('canvas');
+      tmp.width = img.width;
+      tmp.height = img.height;
+      const tctx = tmp.getContext('2d');
+      tctx.drawImage(img, 0, 0);
+      const id = tctx.getImageData(0, 0, tmp.width, tmp.height);
+      const d = id.data;
+      for (let i = 0; i < d.length; i += 4) {
+        d[i]     = 255 - d[i];
+        d[i + 1] = 255 - d[i + 1];
+        d[i + 2] = 255 - d[i + 2];
+      }
+      tctx.putImageData(id, 0, 0);
+      resolve(tmp.toDataURL());
+    };
+    img.src = dataURL;
+  });
+}
+
+async function toggleTheme() {
+  // Persist the on-screen canvas into the current page before inverting
+  saveCurrentPageData();
+
+  theme = theme === 'dark' ? 'light' : 'dark';
+  document.body.classList.toggle('light-theme', theme === 'light');
+
+  // Invert every page's bitmap AND its undo stack
+  for (const page of pages) {
+    page.data = await invertImageDataURL(page.data);
+    page.undoStack = await Promise.all(page.undoStack.map(invertImageDataURL));
+  }
+
+  // Flip default pen color if user is still on the previous default
+  if (colorPicker.value.toLowerCase() === (theme === 'light' ? '#000000' : '#ffffff')) {
+    const inverted = theme === 'light' ? '#ffffff' : '#000000';
+    colorPicker.value = inverted;
+    ctx.strokeStyle = inverted;
+    document.getElementById('colorSwatch').style.background = inverted;
+  }
+
+  loadPage(currentPage);
+  renderPageStrip();
+  showToast(theme === 'light' ? 'Chalkboard mode' : 'Whiteboard mode');
+}
+
+btnTheme.addEventListener('click', toggleTheme);
+
 // ─── Brush Size ───
 brushSize.addEventListener('input', () => {
   const val = parseInt(brushSize.value, 10);
@@ -275,73 +334,53 @@ function getPosition(e) {
   };
 }
 
-// ─── Lasso overlay ───
-function ensureLassoOverlay() {
-  if (lassoOverlay) return;
-  lassoOverlay = document.createElement('canvas');
-  lassoOverlay.className = 'lasso-overlay';
-  lassoOverlay.width = canvas.width;
-  lassoOverlay.height = canvas.height;
-  canvas.parentElement.appendChild(lassoOverlay);
-  lassoCtx = lassoOverlay.getContext('2d');
-  syncLassoOverlayStyle();
-}
-
-function syncLassoOverlayStyle() {
-  if (!lassoOverlay) return;
-  const rect = canvas.getBoundingClientRect();
-  const parentRect = canvas.parentElement.getBoundingClientRect();
-  lassoOverlay.style.position = 'absolute';
-  lassoOverlay.style.left = (rect.left - parentRect.left) + 'px';
-  lassoOverlay.style.top = (rect.top - parentRect.top) + 'px';
-  lassoOverlay.style.width = rect.width + 'px';
-  lassoOverlay.style.height = rect.height + 'px';
-  lassoOverlay.style.pointerEvents = 'none';
-  lassoOverlay.style.zIndex = '5';
-}
-
+// ─── Lasso (preview drawn directly on main canvas) ───
 function drawLassoPreview() {
-  if (!lassoCtx || lassoPoints.length < 2) return;
-  lassoCtx.clearRect(0, 0, lassoOverlay.width, lassoOverlay.height);
-  lassoCtx.save();
-  lassoCtx.strokeStyle = '#e87040';
-  lassoCtx.lineWidth = 1.5;
-  lassoCtx.setLineDash([6, 4]);
-  lassoCtx.beginPath();
-  lassoCtx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
-  for (let i = 1; i < lassoPoints.length; i++) {
-    lassoCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
-  }
-  lassoCtx.stroke();
-  lassoCtx.fillStyle = 'rgba(232, 112, 64, 0.12)';
-  lassoCtx.fill();
-  lassoCtx.restore();
-}
-
-function commitLasso() {
-  if (lassoPoints.length < 3) {
-    if (lassoCtx) lassoCtx.clearRect(0, 0, lassoOverlay.width, lassoOverlay.height);
-    lassoPoints = [];
-    return;
-  }
-  // Erase pixels inside polygon by painting white (canvas background)
+  if (!lassoSnapshot || lassoPoints.length < 2) return;
+  // Restore the pre-lasso canvas state, then draw preview on top
+  ctx.putImageData(lassoSnapshot, 0, 0);
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
+  ctx.strokeStyle = '#e87040';
+  ctx.fillStyle = 'rgba(232, 112, 64, 0.18)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
   ctx.beginPath();
   ctx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
   for (let i = 1; i < lassoPoints.length; i++) {
     ctx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
   }
   ctx.closePath();
-  ctx.fillStyle = '#ffffff';
   ctx.fill();
+  ctx.stroke();
   ctx.restore();
+}
 
-  if (lassoCtx) lassoCtx.clearRect(0, 0, lassoOverlay.width, lassoOverlay.height);
+function commitLasso() {
+  // Restore snapshot so preview is gone
+  if (lassoSnapshot) ctx.putImageData(lassoSnapshot, 0, 0);
+
+  if (lassoPoints.length >= 3) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.beginPath();
+    ctx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
+    for (let i = 1; i < lassoPoints.length; i++) {
+      ctx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = canvasBgColor();
+    ctx.fill();
+    ctx.restore();
+    saveUndoState();
+    updateCurrentThumbnail();
+    showToast('Region deleted');
+  }
+
   lassoPoints = [];
-  saveUndoState();
-  updateCurrentThumbnail();
-  showToast('Region deleted');
+  lassoSnapshot = null;
+  // Auto-revert to previous tool so user can keep drawing
+  setTool(previousTool === 'lasso' ? 'pen' : previousTool);
 }
 
 // ─── Drawing ───
@@ -349,9 +388,8 @@ function startDraw(e) {
   const pos = getPosition(e);
 
   if (currentTool === 'lasso') {
-    ensureLassoOverlay();
-    syncLassoOverlayStyle();
     isDrawing = true;
+    lassoSnapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
     lassoPoints = [pos];
     return;
   }
@@ -427,8 +465,7 @@ canvas.addEventListener('touchend', stopDraw);
 function clearCanvas() {
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // Fill white so thumbnail looks correct
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = canvasBgColor();
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   if (currentTool === 'eraser') {
     ctx.globalCompositeOperation = 'destination-out';
@@ -473,6 +510,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'b' && !e.ctrlKey && !e.metaKey) setTool('pen');
   if (e.key === 'e' && !e.ctrlKey && !e.metaKey) setTool('eraser');
   if (e.key === 'l' && !e.ctrlKey && !e.metaKey) setTool('lasso');
+  if (e.key === 't' && !e.ctrlKey && !e.metaKey) toggleTheme();
 
   // Page navigation: PgUp/PgDn or Ctrl+Left/Right
   if (e.key === 'PageUp' || ((e.ctrlKey || e.metaKey) && e.key === 'ArrowLeft')) {
@@ -502,7 +540,6 @@ function resizeCanvas() {
 
   canvas.style.width = newWidth + 'px';
   canvas.style.height = newHeight + 'px';
-  syncLassoOverlayStyle();
 }
 
 window.addEventListener('resize', resizeCanvas);
