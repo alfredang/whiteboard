@@ -23,6 +23,7 @@ const btnArrow = document.getElementById('btnArrow');
 const btnTheme = document.getElementById('btnTheme');
 const sizeLabel = document.getElementById('sizeLabel');
 const shapeTextEditor = document.getElementById('shapeTextEditor');
+const eraserCursor = document.getElementById('eraserCursor');
 
 // Flowchart shape tools (drag to size). Box shapes also accept a text label.
 const SHAPE_TOOLS = ['rect', 'roundrect', 'diamond', 'arrow'];
@@ -46,6 +47,9 @@ const toolSizeRange = { pen: { min: 1, max: 50 }, eraser: { min: 5, max: 120 } }
 // Lasso state
 let lassoPoints = [];
 let previousTool = 'pen';
+
+// Last pointer position over the canvas (for the eraser size indicator)
+let lastPointer = null;
 
 // Line / circle / shape state
 let lineStart = null;
@@ -334,6 +338,7 @@ function setTool(tool) {
   canvas.classList.toggle('lasso-cursor', tool === 'lasso');
   canvas.classList.toggle('pen-cursor', tool === 'pen');
   canvas.classList.toggle('shape-cursor', SHAPE_TOOLS.includes(tool));
+  if (tool !== 'eraser') hideEraserCursor();
 
   if (tool === 'eraser') {
     ctx.globalCompositeOperation = 'destination-out';
@@ -439,6 +444,7 @@ brushSize.addEventListener('input', () => {
   toolSizes[key] = val;
   sizeValue.textContent = val + 'px';
   ctx.lineWidth = val;
+  if (currentTool === 'eraser' && lastPointer) updateEraserCursor(lastPointer);
 });
 
 // ─── Color Picker ───
@@ -464,6 +470,26 @@ function getPosition(e) {
     x: (e.clientX - rect.left) * scaleX,
     y: (e.clientY - rect.top) * scaleY,
   };
+}
+
+// ─── Eraser size indicator ───
+// Positions the ring on the cursor and sizes it to the eraser diameter,
+// in the canvas-container's offset space (matches the shape text editor).
+function updateEraserCursor(pos) {
+  lastPointer = pos;
+  if (currentTool !== 'eraser') { eraserCursor.classList.remove('visible'); return; }
+  const sx = canvas.offsetWidth / canvas.width;
+  const sy = canvas.offsetHeight / canvas.height;
+  const diameter = toolSizes.eraser * sx;
+  eraserCursor.style.width = diameter + 'px';
+  eraserCursor.style.height = (toolSizes.eraser * sy) + 'px';
+  eraserCursor.style.left = (canvas.offsetLeft + pos.x * sx) + 'px';
+  eraserCursor.style.top = (canvas.offsetTop + pos.y * sy) + 'px';
+  eraserCursor.classList.add('visible');
+}
+
+function hideEraserCursor() {
+  eraserCursor.classList.remove('visible');
 }
 
 // ─── Lasso (preview drawn directly on main canvas) ───
@@ -844,14 +870,15 @@ canvas.addEventListener('mousemove', (e) => {
   draw(e);
   const pos = getPosition(e);
   statusCoords.textContent = `${Math.round(pos.x)}, ${Math.round(pos.y)}`;
+  updateEraserCursor(pos);
 });
 canvas.addEventListener('mouseup', stopDraw);
-canvas.addEventListener('mouseout', stopDraw);
+canvas.addEventListener('mouseout', (e) => { stopDraw(e); hideEraserCursor(); });
 
 // Touch events
 canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDraw(e); });
-canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); });
-canvas.addEventListener('touchend', stopDraw);
+canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); updateEraserCursor(getPosition(e)); });
+canvas.addEventListener('touchend', (e) => { stopDraw(e); hideEraserCursor(); });
 
 // ─── Actions ───
 function clearCanvas() {
