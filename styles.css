@@ -634,17 +634,20 @@ canvas.shape-cursor {
   cursor: crosshair;
 }
 
-/* Eraser size indicator — a circle that tracks the cursor over the canvas */
+/* Eraser size indicator — a dashed circle that tracks the cursor and matches
+   the eraser diameter. mix-blend-mode: difference keeps the dashes visible on
+   both the white and black (chalkboard) canvas without any extra logic. */
 .eraser-ring {
   position: absolute;
   display: none;
   z-index: 40;
+  box-sizing: border-box;
   border-radius: 50%;
-  border: 1.5px solid rgba(120, 120, 120, 0.9);
-  background: rgba(180, 180, 180, 0.22);
+  border: 2px dashed #fff;
+  background: transparent;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+  mix-blend-mode: difference;
 }
 
 .eraser-ring.visible {

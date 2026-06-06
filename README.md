@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![GitHub Pages](https://img.shields.io/badge/Deploy-GitHub%20Pages-222?logo=github)](https://alfredang.github.io/whiteboard/)
 
-**A minimal, browser-based drawing tool with a dark creative-studio aesthetic. Built for educators and trainers.**
+**A minimal, browser-based whiteboard with freehand drawing and flowchart tools, in a dark creative-studio aesthetic. Built for educators and trainers.**
 
 [Live Demo](https://alfredang.github.io/whiteboard/) · [Report Bug](https://github.com/alfredang/whiteboard/issues) · [Request Feature](https://github.com/alfredang/whiteboard/issues)
 
@@ -21,21 +21,26 @@
 
 ## About
 
-Whiteboard is a lightweight, zero-dependency drawing application designed for classroom and training environments. It runs entirely in the browser with no backend or build step required — just open `index.html` and start drawing.
+Whiteboard is a lightweight, zero-dependency drawing application designed for classroom and training environments. It runs entirely in the browser with no backend or build step required — just open `index.html` and start drawing. Beyond freehand sketching, it includes a set of flowchart tools so you can build labelled diagrams (process boxes, decisions, connectors) right on the board.
 
 ### Key Features
 
 | Feature | Description |
 |---------|-------------|
-| **Multi-page support** | Add, delete, and navigate between pages with live thumbnail previews |
-| **Pen & Eraser** | Drawing tools with keyboard shortcuts (`B` / `E`) |
+| **Freehand pen** | Smooth pressure-friendly drawing with a pencil cursor (`B`) |
+| **Flowchart shapes** | Process box (`R`), rounded terminator (`G`), and decision diamond (`D`) — drag to size, then type a centered, auto-wrapped label |
+| **Connector arrows** | Draw directional arrows to link shapes (`A`) |
+| **Line & circle** | Straight lines (`I`) and ellipses (`O`) with live preview |
+| **Eraser with size ring** | A circle cursor shows the exact eraser size as you erase (`E`) |
+| **Lasso delete** | Encircle any region to wipe it in one stroke (`L`) |
+| **Light / dark canvas** | Toggle between whiteboard and chalkboard modes (`T`) — existing work is inverted to match |
+| **Multi-page support** | Add, delete, navigate, and reset pages with live thumbnail previews |
 | **Color picker** | Full color selection with visual swatch indicator |
-| **Adjustable brush size** | Slider control from 1px to 50px |
+| **Adjustable size** | Per-tool size slider (pen 1–50px, eraser 5–120px) |
 | **Undo** | Per-page undo history (Ctrl/Cmd+Z, up to 30 states) |
 | **PDF export** | All pages exported as a single landscape PDF document |
-| **Page navigation** | PgUp/PgDn or Ctrl+Arrow keys to switch pages |
+| **Auto-save** | Pages persist to `localStorage` across refreshes |
 | **Touch support** | Full touch input for tablets and mobile devices |
-| **Coordinate tracking** | Real-time cursor position in the status bar |
 | **Responsive layout** | Adapts to any screen size with smooth animations |
 
 ## Tech Stack
@@ -52,37 +57,39 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   Browser                       │
-│                                                 │
-│  ┌──────────┐  ┌────────────┐  ┌────────────┐  │
-│  │  Header   │  │  Page Strip │  │ Status Bar │  │
-│  │  Toolbar  │  │  Thumbnails │  │  Coords    │  │
-│  └────┬─────┘  └──────┬─────┘  └────────────┘  │
-│       │               │                         │
-│       ▼               ▼                         │
-│  ┌─────────────────────────┐                    │
-│  │    HTML5 Canvas (1200×700)                   │
-│  │    ├── Drawing Engine    │                    │
-│  │    ├── Undo Stack (×30)  │                    │
-│  │    └── Page State Mgmt   │                    │
-│  └────────────┬────────────┘                    │
-│               │                                 │
-│               ▼                                 │
-│  ┌─────────────────────────┐                    │
-│  │   jsPDF (CDN)           │                    │
-│  │   └── Multi-page export │                    │
-│  └─────────────────────────┘                    │
-└─────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────┐
+│                        Browser                          │
+│                                                         │
+│  ┌──────────┐   ┌─────────────┐   ┌────────────┐        │
+│  │  Header  │   │  Page Strip │   │ Status Bar │        │
+│  │  Toolbar │   │  Thumbnails │   │  Coords    │        │
+│  └────┬─────┘   └──────┬──────┘   └────────────┘        │
+│       │                │                                │
+│       ▼                ▼                                │
+│  ┌──────────────────────────────────────────┐          │
+│  │        HTML5 Canvas (1200×700)            │          │
+│  │  ├── Freehand / Line / Circle             │          │
+│  │  ├── Flowchart shapes + text labels       │          │
+│  │  ├── Eraser (+ size ring) / Lasso delete  │          │
+│  │  ├── Snapshot preview + Undo stack (×30)  │          │
+│  │  └── Per-page state                       │          │
+│  └───────┬───────────────────────┬───────────┘          │
+│          │                       │                      │
+│          ▼                       ▼                      │
+│  ┌────────────────┐     ┌──────────────────┐            │
+│  │  localStorage  │     │   jsPDF (CDN)    │            │
+│  │  auto-save     │     │  multi-page PDF  │            │
+│  └────────────────┘     └──────────────────┘            │
+└───────────────────────────────────────────────────────┘
 ```
 
 ## Project Structure
 
 ```
 whiteboard/
-├── index.html          # Main HTML with toolbar, canvas, page strip, and status bar
-├── styles.css          # Dark theme, responsive layout, animations
-├── whiteboard.js       # Drawing engine, page management, undo, PDF export
+├── index.html          # Toolbar, canvas, page strip, status bar, text editor overlay
+├── styles.css          # Dark/light themes, responsive layout, animations, cursors
+├── whiteboard.js       # Drawing engine, shapes & labels, pages, undo, PDF export
 ├── preview.png         # Screenshot for README
 └── README.md
 ```
@@ -120,11 +127,21 @@ Or use the live version: **[https://alfredang.github.io/whiteboard/](https://alf
 
 | Shortcut | Action |
 |----------|--------|
-| `B` | Select Pen tool |
-| `E` | Select Eraser tool |
+| `B` | Pen |
+| `E` | Eraser |
+| `L` | Lasso delete |
+| `I` | Line |
+| `O` | Circle |
+| `R` | Process box |
+| `G` | Rounded box |
+| `D` | Decision diamond |
+| `A` | Connector arrow |
+| `T` | Toggle light / dark canvas |
 | `Ctrl/Cmd + Z` | Undo |
 | `PgUp` / `Ctrl + ←` | Previous page |
 | `PgDn` / `Ctrl + →` | Next page |
+
+> **Tip:** After drawing a box, rounded box, or diamond, a text field appears inside it — type your label and press `Enter` (`Shift+Enter` for a new line, `Esc` to leave it blank).
 
 ## Deployment
 
