@@ -59,6 +59,33 @@
 
       <div class="toolbar-divider"></div>
 
+      <!-- Flowchart shapes -->
+      <div class="toolbar-group">
+        <button class="tool-btn" id="btnRect" title="Process box — drag, then type (R)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="6" width="18" height="12" rx="1"/>
+          </svg>
+        </button>
+        <button class="tool-btn" id="btnRoundRect" title="Rounded box / terminator — drag, then type (G)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="7" width="18" height="10" rx="5"/>
+          </svg>
+        </button>
+        <button class="tool-btn" id="btnDiamond" title="Decision diamond — drag, then type (D)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3 21 12 12 21 3 12 Z"/>
+          </svg>
+        </button>
+        <button class="tool-btn" id="btnArrow" title="Connector arrow (A)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="19" y2="12"/>
+            <polyline points="14 7 20 12 14 17"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
       <!-- Color -->
       <div class="toolbar-group">
         <div class="color-wrapper">
@@ -137,6 +164,8 @@
 
   <div class="canvas-container">
     <canvas id="whiteboard" width="1200" height="700"></canvas>
+    <textarea id="shapeTextEditor" class="shape-text-editor" spellcheck="false"
+              placeholder="Type label… (Enter to confirm)"></textarea>
   </div>
 
   <div class="status-bar">
@@ -148,6 +177,6 @@
   <div class="toast" id="toast"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
-  <script src="whiteboard.js?v=2"></script>
+  <script src="whiteboard.js?v=4"></script>
 </body>
 </html>

@@ -16,8 +16,19 @@ const btnEraser = document.getElementById('btnEraser');
 const btnLasso = document.getElementById('btnLasso');
 const btnLine = document.getElementById('btnLine');
 const btnCircle = document.getElementById('btnCircle');
+const btnRect = document.getElementById('btnRect');
+const btnRoundRect = document.getElementById('btnRoundRect');
+const btnDiamond = document.getElementById('btnDiamond');
+const btnArrow = document.getElementById('btnArrow');
 const btnTheme = document.getElementById('btnTheme');
 const sizeLabel = document.getElementById('sizeLabel');
+const shapeTextEditor = document.getElementById('shapeTextEditor');
+
+// Flowchart shape tools (drag to size). Box shapes also accept a text label.
+const SHAPE_TOOLS = ['rect', 'roundrect', 'diamond', 'arrow'];
+const TEXT_SHAPES = ['rect', 'roundrect', 'diamond'];
+const SHAPE_FONT_PX = 22;
+const SHAPE_FONT = `500 ${SHAPE_FONT_PX}px 'DM Sans', system-ui, -apple-system, sans-serif`;
 
 let theme = 'dark'; // 'dark' = white canvas, 'light' = black canvas
 function canvasBgColor() { return theme === 'dark' ? '#ffffff' : '#0c0c0f'; }
@@ -36,8 +47,11 @@ const toolSizeRange = { pen: { min: 1, max: 50 }, eraser: { min: 5, max: 120 } }
 let lassoPoints = [];
 let previousTool = 'pen';
 
-// Line / circle state
+// Line / circle / shape state
 let lineStart = null;
+let shapeEnd = null;
+// Active flowchart text editor: { type, x1, y1, x2, y2 } or null
+let editing = null;
 
 // Offscreen snapshot canvas used to restore the pre-shape state each frame
 const snapCanvas = document.createElement('canvas');
@@ -300,6 +314,9 @@ function undo() {
 
 // ─── Tool Switching ───
 function setTool(tool) {
+  // Finalize any in-progress flowchart label before switching tools
+  if (editing) commitTextEditor();
+
   if (tool === 'lasso' && currentTool !== 'lasso') {
     previousTool = currentTool;
   }
@@ -309,13 +326,19 @@ function setTool(tool) {
   btnLasso.classList.toggle('active', tool === 'lasso');
   btnLine.classList.toggle('active', tool === 'line');
   btnCircle.classList.toggle('active', tool === 'circle');
+  btnRect.classList.toggle('active', tool === 'rect');
+  btnRoundRect.classList.toggle('active', tool === 'roundrect');
+  btnDiamond.classList.toggle('active', tool === 'diamond');
+  btnArrow.classList.toggle('active', tool === 'arrow');
   canvas.classList.toggle('eraser-cursor', tool === 'eraser');
   canvas.classList.toggle('lasso-cursor', tool === 'lasso');
+  canvas.classList.toggle('pen-cursor', tool === 'pen');
+  canvas.classList.toggle('shape-cursor', SHAPE_TOOLS.includes(tool));
 
   if (tool === 'eraser') {
     ctx.globalCompositeOperation = 'destination-out';
   } else {
-    // pen / line / circle / lasso
+    // pen / line / circle / lasso / flowchart shapes
     ctx.globalCompositeOperation = 'source-over';
     if (tool !== 'lasso') ctx.strokeStyle = colorPicker.value;
   }
@@ -337,7 +360,10 @@ function syncSizeControl() {
   brushSize.min = range.min;
   brushSize.max = range.max;
   brushSize.value = toolSizes[sizeKey];
-  const labels = { pen: 'Pen', eraser: 'Eraser', line: 'Line', circle: 'Circle' };
+  const labels = {
+    pen: 'Pen', eraser: 'Eraser', line: 'Line', circle: 'Circle',
+    rect: 'Box', roundrect: 'Rounded', diamond: 'Diamond', arrow: 'Arrow',
+  };
   sizeLabel.textContent = labels[currentTool] || 'Size';
   sizeValue.textContent = brushSize.value + 'px';
   ctx.lineWidth = brushSize.value;
@@ -348,6 +374,10 @@ btnEraser.addEventListener('click', () => setTool('eraser'));
 btnLasso.addEventListener('click', () => setTool('lasso'));
 btnLine.addEventListener('click', () => setTool('line'));
 btnCircle.addEventListener('click', () => setTool('circle'));
+btnRect.addEventListener('click', () => setTool('rect'));
+btnRoundRect.addEventListener('click', () => setTool('roundrect'));
+btnDiamond.addEventListener('click', () => setTool('diamond'));
+btnArrow.addEventListener('click', () => setTool('arrow'));
 
 // ─── Theme Toggle (inverts canvas: white ↔ black) ───
 function invertImageDataURL(dataURL) {
@@ -484,8 +514,218 @@ function commitLasso() {
   setTool(previousTool === 'lasso' ? 'pen' : previousTool);
 }
 
+// ─── Flowchart Shapes ───
+// All shape helpers stroke with the current ctx.strokeStyle / lineWidth.
+function normBounds(x1, y1, x2, y2) {
+  return {
+    x: Math.min(x1, x2),
+    y: Math.min(y1, y2),
+    w: Math.abs(x2 - x1),
+    h: Math.abs(y2 - y1),
+  };
+}
+
+function drawShapeOutline(type, x1, y1, x2, y2) {
+  const { x, y, w, h } = normBounds(x1, y1, x2, y2);
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.beginPath();
+  if (type === 'rect') {
+    ctx.rect(x, y, w, h);
+  } else if (type === 'roundrect') {
+    const r = Math.min(40, w / 2, h / 2);
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  } else if (type === 'diamond') {
+    ctx.moveTo(x + w / 2, y);
+    ctx.lineTo(x + w, y + h / 2);
+    ctx.lineTo(x + w / 2, y + h);
+    ctx.lineTo(x, y + h / 2);
+    ctx.closePath();
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawArrow(x1, y1, x2, y2) {
+  const head = Math.max(10, ctx.lineWidth * 3 + 6);
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
+  ctx.stroke();
+  ctx.restore();
+}
+
+function wrapLines(text, maxWidth) {
+  ctx.font = SHAPE_FONT;
+  const out = [];
+  for (const paragraph of text.split('\n')) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) { out.push(''); continue; }
+    let line = words[0];
+    for (let i = 1; i < words.length; i++) {
+      const test = line + ' ' + words[i];
+      if (ctx.measureText(test).width > maxWidth && line) {
+        out.push(line);
+        line = words[i];
+      } else {
+        line = test;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+function drawShapeText(shape, text) {
+  const { x, y, w, h } = normBounds(shape.x1, shape.y1, shape.x2, shape.y2);
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  // Diamonds have less usable width at the vertical centre, so wrap tighter.
+  const maxWidth = (shape.type === 'diamond' ? w * 0.58 : w * 0.84);
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = colorPicker.value;
+  ctx.font = SHAPE_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lines = wrapLines(text, maxWidth);
+  const lineHeight = SHAPE_FONT_PX * 1.25;
+  const startY = cy - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, i) => ctx.fillText(line, cx, startY + i * lineHeight));
+  ctx.restore();
+}
+
+// Map canvas coordinates to editor coordinates. The editor is positioned
+// absolutely within .canvas-container (the canvas's offsetParent), so we work
+// in offset space — this is immune to the container's transform, which would
+// otherwise break position:fixed.
+function canvasToScreenRect(x1, y1, x2, y2) {
+  const sx = canvas.offsetWidth / canvas.width;
+  const sy = canvas.offsetHeight / canvas.height;
+  const b = normBounds(x1, y1, x2, y2);
+  return {
+    left: canvas.offsetLeft + b.x * sx,
+    top: canvas.offsetTop + b.y * sy,
+    width: b.w * sx,
+    height: b.h * sy,
+    sx, sy,
+  };
+}
+
+function openTextEditor(shape) {
+  editing = shape;
+  const r = canvasToScreenRect(shape.x1, shape.y1, shape.x2, shape.y2);
+  // Inset the editor so text sits inside the shape (more for diamonds).
+  const inset = shape.type === 'diamond' ? 0.24 : 0.12;
+  const padX = r.width * inset;
+  const padY = r.height * inset;
+  shapeTextEditor.style.left = (r.left + padX) + 'px';
+  shapeTextEditor.style.top = (r.top + padY) + 'px';
+  shapeTextEditor.style.width = Math.max(20, r.width - padX * 2) + 'px';
+  shapeTextEditor.style.height = Math.max(20, r.height - padY * 2) + 'px';
+  shapeTextEditor.style.fontSize = (SHAPE_FONT_PX * r.sy) + 'px';
+  shapeTextEditor.style.color = colorPicker.value;
+  shapeTextEditor.value = '';
+  shapeTextEditor.classList.add('visible');
+  setTimeout(() => shapeTextEditor.focus(), 0);
+}
+
+function commitTextEditor() {
+  if (!editing) return;
+  const shape = editing;
+  const text = shapeTextEditor.value.trim();
+  editing = null;
+  shapeTextEditor.classList.remove('visible');
+  shapeTextEditor.value = '';
+  if (text) drawShapeText(shape, text);
+  saveUndoState();
+  updateCurrentThumbnail();
+}
+
+function cancelTextEditor() {
+  // Keep the shape outline (already drawn), discard any typed text.
+  if (!editing) return;
+  editing = null;
+  shapeTextEditor.classList.remove('visible');
+  shapeTextEditor.value = '';
+  saveUndoState();
+  updateCurrentThumbnail();
+}
+
+shapeTextEditor.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    commitTextEditor();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    cancelTextEditor();
+  }
+  e.stopPropagation(); // don't trigger global tool shortcuts while typing
+});
+shapeTextEditor.addEventListener('blur', () => {
+  if (editing) commitTextEditor();
+});
+
+// Finalize a flowchart shape once the drag ends.
+function finishShape() {
+  const start = lineStart;
+  const end = shapeEnd || start;
+  lineStart = null;
+  shapeEnd = null;
+  const tool = currentTool;
+
+  // Clear the live preview before drawing the final shape.
+  restoreSnapshot();
+  hasSnapshot = false;
+  if (!start) return;
+
+  let x1 = start.x, y1 = start.y, x2 = end.x, y2 = end.y;
+
+  if (tool === 'arrow') {
+    if (Math.hypot(x2 - x1, y2 - y1) < 6) return; // ignore an accidental click
+    drawArrow(x1, y1, x2, y2);
+    saveUndoState();
+    updateCurrentThumbnail();
+    return;
+  }
+
+  // Box shapes: a click or tiny drag becomes a sensibly-sized default box.
+  const MIN = 24;
+  if (Math.abs(x2 - x1) < MIN || Math.abs(y2 - y1) < MIN) {
+    const dw = 170, dh = 90;
+    x1 = start.x - dw / 2; y1 = start.y - dh / 2;
+    x2 = start.x + dw / 2; y2 = start.y + dh / 2;
+  }
+  // Clamp inside the canvas.
+  const pad = 2;
+  x1 = Math.max(pad, Math.min(x1, canvas.width - pad));
+  x2 = Math.max(pad, Math.min(x2, canvas.width - pad));
+  y1 = Math.max(pad, Math.min(y1, canvas.height - pad));
+  y2 = Math.max(pad, Math.min(y2, canvas.height - pad));
+
+  drawShapeOutline(tool, x1, y1, x2, y2);
+  openTextEditor({ type: tool, x1, y1, x2, y2 });
+}
+
 // ─── Drawing ───
 function startDraw(e) {
+  // A click outside the active text editor commits it first.
+  if (editing) { commitTextEditor(); return; }
+
   const pos = getPosition(e);
 
   if (currentTool === 'lasso') {
@@ -495,9 +735,10 @@ function startDraw(e) {
     return;
   }
 
-  if (currentTool === 'line' || currentTool === 'circle') {
+  if (currentTool === 'line' || currentTool === 'circle' || SHAPE_TOOLS.includes(currentTool)) {
     isDrawing = true;
     lineStart = pos;
+    shapeEnd = pos;
     takeSnapshot();
     return;
   }
@@ -547,6 +788,17 @@ function draw(e) {
     return;
   }
 
+  if (SHAPE_TOOLS.includes(currentTool)) {
+    shapeEnd = pos;
+    restoreSnapshot();
+    if (currentTool === 'arrow') {
+      drawArrow(lineStart.x, lineStart.y, pos.x, pos.y);
+    } else {
+      drawShapeOutline(currentTool, lineStart.x, lineStart.y, pos.x, pos.y);
+    }
+    return;
+  }
+
   ctx.beginPath();
   ctx.moveTo(lastX, lastY);
   ctx.lineTo(pos.x, pos.y);
@@ -561,6 +813,11 @@ function stopDraw() {
 
   if (currentTool === 'lasso') {
     commitLasso();
+    return;
+  }
+
+  if (SHAPE_TOOLS.includes(currentTool)) {
+    finishShape();
     return;
   }
 
@@ -642,11 +899,18 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     undo();
   }
+  // Don't hijack typing in the flowchart label editor.
+  if (editing || e.target === shapeTextEditor) return;
+
   if (e.key === 'b' && !e.ctrlKey && !e.metaKey) setTool('pen');
   if (e.key === 'e' && !e.ctrlKey && !e.metaKey) setTool('eraser');
   if (e.key === 'l' && !e.ctrlKey && !e.metaKey) setTool('lasso');
   if (e.key === 'i' && !e.ctrlKey && !e.metaKey) setTool('line');
   if (e.key === 'o' && !e.ctrlKey && !e.metaKey) setTool('circle');
+  if (e.key === 'r' && !e.ctrlKey && !e.metaKey) setTool('rect');
+  if (e.key === 'g' && !e.ctrlKey && !e.metaKey) setTool('roundrect');
+  if (e.key === 'd' && !e.ctrlKey && !e.metaKey) setTool('diamond');
+  if (e.key === 'a' && !e.ctrlKey && !e.metaKey) setTool('arrow');
   if (e.key === 't' && !e.ctrlKey && !e.metaKey) toggleTheme();
 
   // Page navigation: PgUp/PgDn or Ctrl+Left/Right
@@ -679,8 +943,12 @@ function resizeCanvas() {
   canvas.style.height = newHeight + 'px';
 }
 
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', () => {
+  if (editing) commitTextEditor(); // overlay position would otherwise go stale
+  resizeCanvas();
+});
 resizeCanvas();
 
 // ─── Initial render ───
+setTool('pen'); // apply cursor + size defaults consistently
 renderPageStrip();

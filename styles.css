@@ -629,6 +629,46 @@ canvas.lasso-cursor {
   cursor: crosshair;
 }
 
+/* Shape tools use crosshair while active */
+canvas.shape-cursor {
+  cursor: crosshair;
+}
+
+/* Pen tool shows a pencil cursor (hotspot at the tip, bottom-left) */
+canvas.pen-cursor {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%23111" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M3 21l3.5-1L21 5.5 18.5 3 3 18.5z" fill="%23fff"/><path d="M15 6.5l2.5 2.5"/></svg>') 3 21, crosshair;
+}
+
+/* ─── Floating text editor for flowchart shapes ─── */
+.shape-text-editor {
+  position: absolute;
+  display: none;
+  z-index: 50;
+  margin: 0;
+  padding: 4px 6px;
+  border: 1.5px dashed var(--accent);
+  border-radius: 6px;
+  background: rgba(232, 112, 64, 0.06);
+  color: inherit;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: center;
+  resize: none;
+  outline: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.shape-text-editor.visible {
+  display: block;
+}
+
+.shape-text-editor::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
 /* Theme toggle icon */
 #btnTheme svg { transition: transform var(--transition); }
 body.light-theme #btnTheme svg { transform: rotate(180deg); }
