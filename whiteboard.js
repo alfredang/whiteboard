@@ -9,6 +9,7 @@ const statusCoords = document.getElementById('statusCoords');
 const toast = document.getElementById('toast');
 const pageStripInner = document.getElementById('pageStripInner');
 const btnAddPage = document.getElementById('btnAddPage');
+const btnResetPages = document.getElementById('btnResetPages');
 
 const btnPen = document.getElementById('btnPen');
 const btnEraser = document.getElementById('btnEraser');
@@ -156,6 +157,30 @@ function deletePage(index) {
   showToast('Page deleted');
 }
 
+function resetAllPages() {
+  if (!confirm('Delete all pages and start fresh? This cannot be undone.')) return;
+
+  const blankData = createBlankDataURL();
+  pages = [{ data: blankData, undoStack: [blankData] }];
+  currentPage = 0;
+
+  // Clear the on-screen canvas synchronously so renderPageStrip doesn't
+  // re-capture the old drawing back into the blank page.
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = canvasBgColor();
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = colorPicker.value;
+  if (currentTool === 'eraser') {
+    ctx.globalCompositeOperation = 'destination-out';
+  }
+
+  updateStatusPage();
+  renderPageStrip();
+  persistState();
+  showToast('All pages reset');
+}
+
 function switchPage(index) {
   if (index === currentPage) return;
   saveCurrentPageData();
@@ -246,6 +271,7 @@ function renderPageStrip() {
 }
 
 btnAddPage.addEventListener('click', addPage);
+btnResetPages.addEventListener('click', resetAllPages);
 
 // ─── Undo (per-page) ───
 function saveUndoState() {
