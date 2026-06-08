@@ -634,6 +634,11 @@ canvas.shape-cursor {
   cursor: crosshair;
 }
 
+/* Select / Move tool — JS swaps to move/resize cursors over shapes */
+canvas.select-cursor {
+  cursor: default;
+}
+
 /* Eraser size indicator — a dashed circle that tracks the cursor and matches
    the eraser diameter. mix-blend-mode: difference keeps the dashes visible on
    both the white and black (chalkboard) canvas without any extra logic. */
