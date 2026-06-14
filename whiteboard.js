@@ -92,18 +92,20 @@ const SHAPE_FONT = `500 ${SHAPE_FONT_PX}px 'DM Sans', system-ui, -apple-system, 
 const ACCENT = '#e87040';
 
 // ─── Templates (paper styles) ───
-// Each template defines the canvas surface colour, the default ink colour, an
-// optional background pattern, and whether it counts as a "dark" surface
-// (crossing the light/dark boundary recolours existing ink so it stays visible).
-const TEMPLATES = {
-  whiteboard: { bg: '#ffffff', ink: '#111111', dark: false, pattern: null },
-  blackboard: { bg: '#16241c', ink: '#f4f4f0', dark: true,  pattern: null },
-  grid:       { bg: '#ffffff', ink: '#111111', dark: false, pattern: 'grid' },
-  dotted:     { bg: '#fcfcfc', ink: '#111111', dark: false, pattern: 'dots' },
-  lined:      { bg: '#fffdf5', ink: '#111111', dark: false, pattern: 'lines' },
+// A template is two independent axes that the user can mix freely:
+//   • surface — the paper colour + default ink. `dark` marks a dark surface;
+//     crossing the light/dark boundary recolours existing ink so it stays visible.
+//   • pattern — an optional overlay (blank / lines / dots / grid) drawn on top
+//     of the surface colour. Any pattern can sit on any surface.
+const SURFACES = {
+  whiteboard: { bg: '#ffffff', ink: '#111111', dark: false },
+  paper:      { bg: '#f8f4e1', ink: '#111111', dark: false },
+  blackboard: { bg: '#16241c', ink: '#f4f4f0', dark: true  },
 };
-let template = 'whiteboard';
-function tpl() { return TEMPLATES[template]; }
+const PATTERNS = ['blank', 'lines', 'dots', 'grid'];
+let surface = 'whiteboard';
+let pattern = 'blank';
+function tpl() { return SURFACES[surface]; }
 function canvasBgColor() { return tpl().bg; }
 
 // ─── Layered model ───
@@ -240,7 +242,8 @@ function persistState() {
   saveTimer = setTimeout(() => {
     try {
       const payload = {
-        template,
+        surface,
+        pattern,
         currentPage,
         pages: pages.map(p => ({ ink: p.ink, shapes: p.shapes })),
       };
@@ -605,20 +608,20 @@ function drawShape(c, s) {
 // Draw the active template's background pattern (grid / dots / lines) onto a
 // context that has already been filled with the surface colour.
 function drawPaperPattern(c) {
-  const pattern = tpl().pattern;
-  if (!pattern) return;
+  if (!pattern || pattern === 'blank') return;
   const step = 28;
+  const dark = tpl().dark;
   c.save();
   c.globalCompositeOperation = 'source-over';
   if (pattern === 'grid') {
-    c.strokeStyle = 'rgba(60, 90, 160, 0.12)';
+    c.strokeStyle = dark ? 'rgba(190, 220, 200, 0.16)' : 'rgba(60, 90, 160, 0.12)';
     c.lineWidth = 1;
     c.beginPath();
     for (let x = step; x < W; x += step) { c.moveTo(x, 0); c.lineTo(x, H); }
     for (let y = step; y < H; y += step) { c.moveTo(0, y); c.lineTo(W, y); }
     c.stroke();
   } else if (pattern === 'dots') {
-    c.fillStyle = 'rgba(40, 40, 60, 0.22)';
+    c.fillStyle = dark ? 'rgba(205, 225, 210, 0.28)' : 'rgba(40, 40, 60, 0.22)';
     for (let x = step; x < W; x += step) {
       for (let y = step; y < H; y += step) {
         c.beginPath();
@@ -627,7 +630,7 @@ function drawPaperPattern(c) {
       }
     }
   } else if (pattern === 'lines') {
-    c.strokeStyle = 'rgba(150, 120, 60, 0.30)';
+    c.strokeStyle = dark ? 'rgba(200, 220, 205, 0.22)' : 'rgba(150, 120, 60, 0.30)';
     c.lineWidth = 1;
     c.beginPath();
     for (let y = step; y < H; y += step) { c.moveTo(0, y); c.lineTo(W, y); }
@@ -717,11 +720,23 @@ ctx.lineJoin = 'round';
 // Restore from localStorage if present, otherwise create a blank first page
 const persisted = loadPersistedState();
 if (persisted) {
-  if (persisted.template && TEMPLATES[persisted.template]) {
-    template = persisted.template;
+  if (persisted.surface && SURFACES[persisted.surface]) {
+    surface = persisted.surface;
+    if (PATTERNS.includes(persisted.pattern)) pattern = persisted.pattern;
+  } else if (persisted.template) {
+    // Backward-compat: the old single-axis template combined surface + pattern.
+    const LEGACY = {
+      whiteboard: ['whiteboard', 'blank'],
+      blackboard: ['blackboard', 'blank'],
+      grid:       ['whiteboard', 'grid'],
+      dotted:     ['whiteboard', 'dots'],
+      lined:      ['whiteboard', 'lines'],
+    };
+    const [s, p] = LEGACY[persisted.template] || ['whiteboard', 'blank'];
+    surface = s; pattern = p;
   } else if (persisted.theme) {
     // Backward-compat: the old binary theme toggle.
-    template = persisted.theme === 'light' ? 'blackboard' : 'whiteboard';
+    surface = persisted.theme === 'light' ? 'blackboard' : 'whiteboard';
   }
   pages = persisted.pages.map(p => {
     // Backward-compat: older saves stored a flattened bitmap as `data`.
@@ -1177,12 +1192,23 @@ function setColor(hex) {
   });
 }
 
-async function setTemplate(name) {
-  if (!TEMPLATES[name] || name === template) { closeDropdowns(); return; }
+function syncTemplateMenu() {
+  document.querySelectorAll('.template-item[data-surface]').forEach(el => {
+    el.classList.toggle('active', el.dataset.surface === surface);
+  });
+  document.querySelectorAll('.template-item[data-pattern]').forEach(el => {
+    el.classList.toggle('active', el.dataset.pattern === pattern);
+  });
+}
+
+// Change the paper surface (whiteboard ⇄ blackboard). The pattern overlay is
+// left untouched, so e.g. a lined blackboard stays lined.
+async function setSurface(name) {
+  if (!SURFACES[name] || name === surface) { closeDropdowns(); return; }
   commitCurrentPage();
 
-  const prev = TEMPLATES[template];
-  const next = TEMPLATES[name];
+  const prev = SURFACES[surface];
+  const next = SURFACES[name];
   const crossesDark = prev.dark !== next.dark;
 
   // Crossing the light/dark boundary recolours existing ink so it stays visible.
@@ -1195,19 +1221,15 @@ async function setTemplate(name) {
         shapes: snap.shapes.map(s => ({ ...s, color: invertHex(s.color) })),
       })));
     }
-    // Flip the default pen colour if it still matches the old template's default.
+    // Flip the default pen colour if it still matches the old surface's default.
     if (colorPicker.value.toLowerCase() === prev.ink.toLowerCase()) {
       setColor(next.ink);
     }
   }
 
-  template = name;
+  surface = name;
   applyCanvasBg();
-
-  // Reflect the active template in the dropdown.
-  document.querySelectorAll('.template-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.template === name);
-  });
+  syncTemplateMenu();
 
   shapes = pages[currentPage].shapes;
   loadPage(currentPage);
@@ -1215,11 +1237,28 @@ async function setTemplate(name) {
   renderPageStrip();
   closeDropdowns();
   persistState();
-  showToast(`${name.charAt(0).toUpperCase() + name.slice(1)} template`);
+  showToast(`${name.charAt(0).toUpperCase() + name.slice(1)} surface`);
 }
 
-document.querySelectorAll('.template-item').forEach(item => {
-  item.addEventListener('click', () => setTemplate(item.dataset.template));
+// Change the overlay pattern (blank / lines / dots / grid) on the current surface.
+function setPattern(name) {
+  if (!PATTERNS.includes(name) || name === pattern) { closeDropdowns(); return; }
+  pattern = name;
+  syncTemplateMenu();
+  render();
+  flattenAllThumbnails();
+  renderPageStrip();
+  closeDropdowns();
+  persistState();
+  const label = name === 'blank' ? 'Blank' : name.charAt(0).toUpperCase() + name.slice(1);
+  showToast(`${label} pattern`);
+}
+
+document.querySelectorAll('.template-item[data-surface]').forEach(item => {
+  item.addEventListener('click', () => setSurface(item.dataset.surface));
+});
+document.querySelectorAll('.template-item[data-pattern]').forEach(item => {
+  item.addEventListener('click', () => setPattern(item.dataset.pattern));
 });
 
 // ─── Colour palette ───
@@ -1885,8 +1924,6 @@ resizeCanvas();
 buildPalette();
 applyCanvasBg();
 setColor(tpl().ink);
-document.querySelectorAll('.template-item').forEach(el => {
-  el.classList.toggle('active', el.dataset.template === template);
-});
+syncTemplateMenu();
 setTool('pen');
 renderPageStrip();

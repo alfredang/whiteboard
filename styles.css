@@ -401,6 +401,13 @@ header {
   color: var(--accent);
 }
 
+.template-divider {
+  height: 1px;
+  margin: 6px 2px;
+  background: var(--border-focus);
+  opacity: 0.5;
+}
+
 .template-preview {
   width: 30px;
   height: 22px;
