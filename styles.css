@@ -172,44 +172,310 @@ header {
   height: 18px;
 }
 
-/* Color picker wrapper */
-.color-wrapper {
+/* ─── Dropdowns (icon-centric) ─── */
+.dropdown {
   position: relative;
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--transition);
+  display: inline-flex;
 }
 
-.color-wrapper:hover {
-  background: var(--bg-hover);
+.dropdown-trigger {
+  position: relative;
 }
 
-.color-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2px solid var(--border-focus);
-  transition: border-color var(--transition), transform var(--transition);
+.dropdown-trigger .trigger-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Small caret in the bottom-right corner of a dropdown trigger */
+.caret {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 4px solid currentColor;
+  opacity: 0.55;
   pointer-events: none;
 }
 
-.color-wrapper:hover .color-swatch {
-  border-color: var(--text-secondary);
-  transform: scale(1.08);
+/* "Menu open" is a neutral state — only the genuinely selected tool keeps the
+   accent highlight, so at most one toolbar item ever looks selected at a time. */
+.dropdown-trigger.open:not(.active) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
-.color-wrapper input[type="color"] {
+.dropdown-panel {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 80;
+  display: none;
+  padding: 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  animation: ddIn 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dropdown-panel.open {
+  display: block;
+}
+
+@keyframes ddIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.palette-title {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 2px 8px;
+  user-select: none;
+}
+
+/* Shape / process palette grid */
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 40px);
+  gap: 4px;
+}
+
+.palette-item {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
+  transition: all var(--transition);
+}
+
+.palette-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.palette-item.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.palette-item svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* ─── Color palette dropdown ─── */
+.color-trigger .color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border-focus);
+  pointer-events: none;
+}
+
+.color-panel {
+  width: 212px;
+}
+
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.swatch:hover {
+  transform: scale(1.15);
+}
+
+.swatch.active {
+  box-shadow: 0 0 0 2px var(--bg-raised), 0 0 0 4px var(--accent);
+}
+
+.custom-color-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.custom-color-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.custom-color-row input[type="color"] {
+  width: 36px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+/* ─── Template dropdown ─── */
+.template-panel {
+  width: 180px;
+}
+
+.template-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.template-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.template-item.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.template-preview {
+  width: 30px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--border-focus);
+  flex-shrink: 0;
+  background-repeat: repeat;
+}
+
+.tp-grid {
+  background-image:
+    linear-gradient(to right, #d6d6de 1px, transparent 1px),
+    linear-gradient(to bottom, #d6d6de 1px, transparent 1px);
+  background-size: 6px 6px;
+}
+
+.tp-dots {
+  background-image: radial-gradient(circle at 1px 1px, #c2c2cc 1px, transparent 0);
+  background-size: 6px 6px;
+}
+
+.tp-lines {
+  background-image: linear-gradient(to bottom, transparent 5px, #e3ddc8 6px);
+  background-size: 100% 6px;
+}
+
+/* Right-aligned dropdown panel (for triggers near the right edge) */
+.dropdown-panel.align-right {
+  left: auto;
+  right: 0;
+}
+
+/* ─── Menu-list dropdown (Clear / reset) ─── */
+.menu-panel {
+  width: 184px;
+  padding: 6px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
   border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.menu-item svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.menu-item.danger {
+  color: var(--danger);
+}
+
+.menu-item.danger:hover {
+  background: var(--danger-soft);
+  color: #f06868;
+}
+
+/* ─── Page drag-and-drop reordering ─── */
+.page-thumb {
+  cursor: grab;
+}
+
+.page-thumb.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+/* Dashed vertical line marking where the dragged page will be inserted */
+.page-drop-indicator {
+  position: absolute;
+  top: 4px;
+  height: 56px;
+  width: 0;
+  border-left: 2px dashed var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  display: none;
+  z-index: 6;
+  transform: translateX(-1px);
+}
+
+.page-drop-indicator.visible {
+  display: block;
 }
 
 /* Brush size */
@@ -361,6 +627,7 @@ header {
 }
 
 .page-strip-inner {
+  position: relative;
   display: flex;
   gap: 8px;
   overflow-x: auto;
@@ -409,6 +676,9 @@ header {
   object-fit: cover;
   display: block;
   border-radius: 4px;
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
 }
 
 .page-thumb-label {
@@ -464,68 +734,6 @@ header {
 .page-thumb-delete:hover {
   background: #f06868;
   transform: scale(1.1) !important;
-}
-
-.page-add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 14px;
-  border-radius: var(--radius-sm);
-  border: 1.5px dashed var(--border-focus);
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-size: 0.78rem;
-  font-weight: 500;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all var(--transition);
-  white-space: nowrap;
-}
-
-.page-add-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-style: solid;
-}
-
-.page-add-btn svg {
-  width: 15px;
-  height: 15px;
-  stroke-width: 2.5;
-}
-
-.page-reset-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 14px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid var(--border-focus);
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-size: 0.78rem;
-  font-weight: 500;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all var(--transition);
-  white-space: nowrap;
-}
-
-.page-reset-btn:hover {
-  border-color: #ef4444;
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
-}
-
-.page-reset-btn svg {
-  width: 15px;
-  height: 15px;
 }
 
 /* ─── Canvas Area ─── */

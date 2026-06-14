@@ -9,35 +9,102 @@ const statusCoords = document.getElementById('statusCoords');
 const toast = document.getElementById('toast');
 const pageStripInner = document.getElementById('pageStripInner');
 const btnAddPage = document.getElementById('btnAddPage');
-const btnResetPages = document.getElementById('btnResetPages');
 
 const btnSelect = document.getElementById('btnSelect');
 const btnPen = document.getElementById('btnPen');
 const btnEraser = document.getElementById('btnEraser');
 const btnLasso = document.getElementById('btnLasso');
-const btnLine = document.getElementById('btnLine');
-const btnCircle = document.getElementById('btnCircle');
-const btnRect = document.getElementById('btnRect');
-const btnRoundRect = document.getElementById('btnRoundRect');
-const btnDiamond = document.getElementById('btnDiamond');
-const btnArrow = document.getElementById('btnArrow');
-const btnTheme = document.getElementById('btnTheme');
 const sizeLabel = document.getElementById('sizeLabel');
 const shapeTextEditor = document.getElementById('shapeTextEditor');
 const eraserCursor = document.getElementById('eraserCursor');
 
+// Dropdown triggers / panels
+const btnShapes = document.getElementById('btnShapes');
+const btnProcess = document.getElementById('btnProcess');
+const btnColor = document.getElementById('btnColor');
+const btnTemplate = document.getElementById('btnTemplate');
+const shapesIcon = document.getElementById('shapesIcon');
+const processIcon = document.getElementById('processIcon');
+const swatchGrid = document.getElementById('swatchGrid');
+const colorSwatch = document.getElementById('colorSwatch');
+
 const W = canvas.width;
 const H = canvas.height;
 
-// Flowchart shape tools (drag to size). Box shapes also accept a text label.
-const SHAPE_TOOLS = ['rect', 'roundrect', 'diamond', 'arrow'];
-const TEXT_SHAPES = ['rect', 'roundrect', 'diamond'];
+// ─── Tool definitions ───
+// Each shape/flowchart tool maps to a concrete geometry `type` plus behaviour
+// flags. The same geometry can appear in both the Shapes and Process menus
+// (e.g. diamond / decision) — only the flags differ.
+const TOOL_DEFS = {
+  // ── Basic shapes (Shapes dropdown) ──
+  rect:          { type: 'rect',          menu: 'shapes' },
+  roundrect:     { type: 'roundrect',     menu: 'shapes' },
+  circle:        { type: 'circle',        menu: 'shapes' },
+  triangle:      { type: 'triangle',      menu: 'shapes' },
+  righttriangle: { type: 'righttriangle', menu: 'shapes' },
+  diamond:       { type: 'diamond',       menu: 'shapes' },
+  pentagon:      { type: 'pentagon',      menu: 'shapes' },
+  hexagon:       { type: 'hexagon',       menu: 'shapes' },
+  star:          { type: 'star',          menu: 'shapes' },
+  parallelogram: { type: 'parallelogram', menu: 'shapes' },
+  trapezoid:     { type: 'trapezoid',     menu: 'shapes' },
+  line:          { type: 'line',          menu: 'shapes', lineLike: true },
+  arrow:         { type: 'arrow',         menu: 'shapes', lineLike: true },
+  doublearrow:   { type: 'doublearrow',   menu: 'shapes', lineLike: true },
+  // ── Flowchart elements (Process dropdown) — labelled nodes + snapping connector ──
+  process:    { type: 'roundrect',     menu: 'process', autoEdit: true },
+  decision:   { type: 'diamond',       menu: 'process', autoEdit: true },
+  terminator: { type: 'capsule',       menu: 'process', autoEdit: true },
+  data:       { type: 'parallelogram', menu: 'process', autoEdit: true },
+  document:   { type: 'document',      menu: 'process', autoEdit: true },
+  subroutine: { type: 'subroutine',    menu: 'process', autoEdit: true },
+  database:   { type: 'cylinder',      menu: 'process', autoEdit: true },
+  manualinput:{ type: 'manualinput',   menu: 'process', autoEdit: true },
+  preparation:{ type: 'hexagon',       menu: 'process', autoEdit: true },
+  offpage:    { type: 'offpage',       menu: 'process', autoEdit: true },
+  onpage:     { type: 'circle',        menu: 'process', autoEdit: true },
+  delay:      { type: 'delay',         menu: 'process', autoEdit: true },
+  display:    { type: 'display',       menu: 'process', autoEdit: true },
+  connector:  { type: 'arrow',         menu: 'process', lineLike: true, snap: true },
+};
+const SHAPE_TOOLS = Object.keys(TOOL_DEFS);
+function isShapeTool(t) { return Object.prototype.hasOwnProperty.call(TOOL_DEFS, t); }
+function isLineTool(t) { return isShapeTool(t) && TOOL_DEFS[t].lineLike; }
+// Geometry types that are line-like (resolved by endpoints, not bounds).
+const LINE_TYPES = ['line', 'arrow', 'doublearrow'];
+function isLineType(type) { return LINE_TYPES.includes(type); }
+function isStroke(s) { return s.type === 'stroke'; }
+// Box-like = has x/y/w/h bounds (rect, circle, diamond, flowchart nodes, …).
+function isBoxLike(s) { return !isLineType(s.type) && !isStroke(s); }
+
+// Bounding box of a freehand stroke's point list.
+function strokeBounds(s) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [px, py] of s.pts) {
+    if (px < minX) minX = px; if (px > maxX) maxX = px;
+    if (py < minY) minY = py; if (py > maxY) maxY = py;
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
 const SHAPE_FONT_PX = 22;
 const SHAPE_FONT = `500 ${SHAPE_FONT_PX}px 'DM Sans', system-ui, -apple-system, sans-serif`;
 const ACCENT = '#e87040';
 
-let theme = 'dark'; // 'dark' = white canvas, 'light' = black canvas
-function canvasBgColor() { return theme === 'dark' ? '#ffffff' : '#0c0c0f'; }
+// ─── Templates (paper styles) ───
+// Each template defines the canvas surface colour, the default ink colour, an
+// optional background pattern, and whether it counts as a "dark" surface
+// (crossing the light/dark boundary recolours existing ink so it stays visible).
+const TEMPLATES = {
+  whiteboard: { bg: '#ffffff', ink: '#111111', dark: false, pattern: null },
+  blackboard: { bg: '#16241c', ink: '#f4f4f0', dark: true,  pattern: null },
+  grid:       { bg: '#ffffff', ink: '#111111', dark: false, pattern: 'grid' },
+  dotted:     { bg: '#fcfcfc', ink: '#111111', dark: false, pattern: 'dots' },
+  lined:      { bg: '#fffdf5', ink: '#111111', dark: false, pattern: 'lines' },
+};
+let template = 'whiteboard';
+function tpl() { return TEMPLATES[template]; }
+function canvasBgColor() { return tpl().bg; }
 
 // ─── Layered model ───
 // The freehand strokes live on an offscreen "ink" canvas (raster). Flowchart
@@ -64,6 +131,7 @@ const toolSizeRange = { pen: { min: 1, max: 50 }, eraser: { min: 5, max: 120 } }
 // Lasso state
 let lassoPoints = [];
 let previousTool = 'pen';
+let lassoMoving = false; // true while dragging an element with the lasso tool
 
 // Last pointer position over the canvas (for the eraser size indicator)
 let lastPointer = null;
@@ -71,6 +139,9 @@ let lastPointer = null;
 // Line / circle / shape drag state
 let lineStart = null;
 let shapeEnd = null;
+
+// Freehand pen stroke currently being drawn (a vector object in `shapes`).
+let activeStroke = null;
 
 // Shapes for the current page (reference into pages[currentPage].shapes)
 let shapes = [];
@@ -83,9 +154,59 @@ function bumpSeq(arr) {
   }
 }
 
-// Selection / direct-manipulation state
-let selectedId = null;
+// Selection / direct-manipulation state. The selection is a list of shape ids
+// so the lasso (and clicks) can act on several elements at once.
+let selectedIds = [];
 let dragState = null;
+function clearSelection() { selectedIds = []; }
+function selectOnly(id) { selectedIds = id ? [id] : []; }
+function isSelected(id) { return selectedIds.indexOf(id) !== -1; }
+
+// Centre point of a shape (midpoint for lines, centroid for strokes) — used by the lasso.
+function shapeCenterPoint(s) {
+  if (isLineType(s.type)) {
+    const [p1, p2] = arrowEnds(s);
+    return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  }
+  if (isStroke(s)) {
+    let sx = 0, sy = 0;
+    for (const [px, py] of s.pts) { sx += px; sy += py; }
+    return { x: sx / s.pts.length, y: sy / s.pts.length };
+  }
+  return { x: s.x + s.w / 2, y: s.y + s.h / 2 };
+}
+
+// Ray-casting point-in-polygon test (poly is a list of {x,y}). The loop wraps
+// poly[last]→poly[0], so the lasso loop is treated as closed automatically.
+function pointInPolygon(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+    const intersect = ((yi > pt.y) !== (yj > pt.y)) &&
+      (pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// Does a lasso polygon catch this element? Mirrors notepadapp:
+//  • box   → centre (or any corner) inside
+//  • line  → start / end / midpoint inside
+//  • stroke→ a majority (≥50%) of its points inside
+function lassoHits(s, poly) {
+  if (isLineType(s.type)) {
+    const [p1, p2] = arrowEnds(s);
+    const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    return [p1, p2, mid].some(p => pointInPolygon(p, poly));
+  }
+  if (isStroke(s)) {
+    let inside = 0;
+    for (const [px, py] of s.pts) if (pointInPolygon({ x: px, y: py }, poly)) inside++;
+    return inside * 2 >= s.pts.length;
+  }
+  if (pointInPolygon(boxCenter(s), poly)) return true;
+  return boxCorners(s).some(([x, y]) => pointInPolygon({ x, y }, poly));
+}
 // Active flowchart text editor target (the box object) or null
 let editing = null;
 let editingBox = null;
@@ -97,6 +218,12 @@ const SNAP_MARGIN = 12;  // how far outside a box an arrow endpoint still snaps
 // ─── Pages ───
 let pages = []; // each: { ink: dataURL, shapes: [...], data: dataURL, undoStack: [] }
 let currentPage = 0;
+let dragPageIndex = null; // index of the page thumbnail being dragged
+let justDragged = false;  // guards the click that fires after a drop
+let dropInsertPos = null; // gap index (0..n) where a dropped page will land
+// Dashed vertical line showing the drop position during a drag.
+const dropIndicator = document.createElement('div');
+dropIndicator.className = 'page-drop-indicator';
 const MAX_UNDO = 30;
 const STORAGE_KEY = 'whiteboard.state.v1';
 
@@ -113,7 +240,7 @@ function persistState() {
   saveTimer = setTimeout(() => {
     try {
       const payload = {
-        theme,
+        template,
         currentPage,
         pages: pages.map(p => ({ ink: p.ink, shapes: p.shapes })),
       };
@@ -147,7 +274,7 @@ function boxCenter(b) { return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; }
 function boxAt(pos, margin = 0) {
   for (let i = shapes.length - 1; i >= 0; i--) {
     const s = shapes[i];
-    if (s.type === 'arrow') continue;
+    if (!isBoxLike(s)) continue;
     if (pos.x >= s.x - margin && pos.x <= s.x + s.w + margin &&
         pos.y >= s.y - margin && pos.y <= s.y + s.h + margin) return s;
   }
@@ -162,13 +289,19 @@ function pointToSegment(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 
-// Topmost shape at a point (boxes by bounds, arrows by distance to the line).
+// Topmost shape at a point (boxes by bounds, lines/arrows by distance to the line).
 function shapeAt(pos) {
   for (let i = shapes.length - 1; i >= 0; i--) {
     const s = shapes[i];
-    if (s.type === 'arrow') {
+    if (isLineType(s.type)) {
       const [p1, p2] = arrowEnds(s);
       if (pointToSegment(pos.x, pos.y, p1.x, p1.y, p2.x, p2.y) <= 8) return s;
+    } else if (isStroke(s)) {
+      const tol = Math.max(8, s.lineWidth / 2 + 4);
+      for (let k = 1; k < s.pts.length; k++) {
+        if (pointToSegment(pos.x, pos.y, s.pts[k - 1][0], s.pts[k - 1][1], s.pts[k][0], s.pts[k][1]) <= tol) return s;
+      }
+      if (s.pts.length === 1 && Math.hypot(pos.x - s.pts[0][0], pos.y - s.pts[0][1]) <= tol) return s;
     } else if (pos.x >= s.x && pos.x <= s.x + s.w && pos.y >= s.y && pos.y <= s.y + s.h) {
       return s;
     }
@@ -185,6 +318,9 @@ function anchorOnBox(box, tx, ty) {
   let scale;
   if (box.type === 'diamond') {
     scale = 1 / (Math.abs(dx) / hw + Math.abs(dy) / hh);
+  } else if (box.type === 'circle') {
+    // Intersection of the ray with the ellipse boundary.
+    scale = 1 / Math.sqrt((dx * dx) / (hw * hw) + (dy * dy) / (hh * hh));
   } else {
     scale = 1 / Math.max(Math.abs(dx) / hw, Math.abs(dy) / hh);
   }
@@ -203,23 +339,115 @@ function arrowEnds(s) {
 }
 
 // ─── Shape drawing (onto any context) ───
+// Trace a closed polygon through a list of [x,y] points.
+function polyPath(c, pts) {
+  pts.forEach((p, i) => (i === 0 ? c.moveTo(p[0], p[1]) : c.lineTo(p[0], p[1])));
+  c.closePath();
+}
+
+// Regular polygon inscribed in the bounding ellipse.
+function regularPoly(c, cx, cy, rx, ry, sides, rot) {
+  const pts = [];
+  for (let i = 0; i < sides; i++) {
+    const a = rot + (i / sides) * Math.PI * 2;
+    pts.push([cx + rx * Math.cos(a), cy + ry * Math.sin(a)]);
+  }
+  polyPath(c, pts);
+}
+
+// N-point star inscribed in the bounding ellipse.
+function starPoly(c, cx, cy, rx, ry, points, innerRatio) {
+  const pts = [];
+  const step = Math.PI / points;
+  for (let i = 0; i < points * 2; i++) {
+    const r = i % 2 === 0 ? 1 : innerRatio;
+    const a = -Math.PI / 2 + i * step;
+    pts.push([cx + rx * r * Math.cos(a), cy + ry * r * Math.sin(a)]);
+  }
+  polyPath(c, pts);
+}
+
 function strokeBoxPath(c, type, x, y, w, h) {
   c.beginPath();
+  const cx = x + w / 2, cy = y + h / 2;
   if (type === 'rect') {
     c.rect(x, y, w, h);
-  } else if (type === 'roundrect') {
-    const r = Math.min(40, w / 2, h / 2);
+  } else if (type === 'roundrect' || type === 'capsule') {
+    // roundrect = soft corners; capsule = fully-rounded "terminator" pill.
+    const r = type === 'capsule' ? Math.min(w / 2, h / 2) : Math.min(40, w / 2, h / 2);
     c.moveTo(x + r, y);
     c.arcTo(x + w, y, x + w, y + h, r);
     c.arcTo(x + w, y + h, x, y + h, r);
     c.arcTo(x, y + h, x, y, r);
     c.arcTo(x, y, x + w, y, r);
     c.closePath();
+  } else if (type === 'circle') {
+    c.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
   } else if (type === 'diamond') {
-    c.moveTo(x + w / 2, y);
-    c.lineTo(x + w, y + h / 2);
-    c.lineTo(x + w / 2, y + h);
-    c.lineTo(x, y + h / 2);
+    polyPath(c, [[cx, y], [x + w, cy], [cx, y + h], [x, cy]]);
+  } else if (type === 'triangle') {
+    polyPath(c, [[cx, y], [x + w, y + h], [x, y + h]]);
+  } else if (type === 'righttriangle') {
+    polyPath(c, [[x, y], [x, y + h], [x + w, y + h]]);
+  } else if (type === 'pentagon') {
+    regularPoly(c, cx, cy, w / 2, h / 2, 5, -Math.PI / 2);
+  } else if (type === 'hexagon') {
+    // Elongated horizontal hexagon (also the flowchart "preparation" symbol).
+    polyPath(c, [
+      [x, cy], [x + w * 0.25, y], [x + w * 0.75, y],
+      [x + w, cy], [x + w * 0.75, y + h], [x + w * 0.25, y + h],
+    ]);
+  } else if (type === 'star') {
+    starPoly(c, cx, cy, w / 2, h / 2, 5, 0.42);
+  } else if (type === 'parallelogram') {
+    const s = Math.min(w * 0.25, h * 0.8);
+    polyPath(c, [[x + s, y], [x + w, y], [x + w - s, y + h], [x, y + h]]);
+  } else if (type === 'trapezoid') {
+    const s = Math.min(w * 0.22, h);
+    polyPath(c, [[x + s, y], [x + w - s, y], [x + w, y + h], [x, y + h]]);
+  } else if (type === 'manualinput') {
+    polyPath(c, [[x, y + h * 0.28], [x + w, y], [x + w, y + h], [x, y + h]]);
+  } else if (type === 'offpage') {
+    // Off-page connector: home-plate pointing down.
+    polyPath(c, [[x, y], [x + w, y], [x + w, y + h * 0.62], [cx, y + h], [x, y + h * 0.62]]);
+  } else if (type === 'subroutine') {
+    // Predefined process: rectangle with two inner vertical bars.
+    c.rect(x, y, w, h);
+    const inset = Math.min(w * 0.12, 16);
+    c.moveTo(x + inset, y); c.lineTo(x + inset, y + h);
+    c.moveTo(x + w - inset, y); c.lineTo(x + w - inset, y + h);
+  } else if (type === 'document') {
+    // Rectangle with a wavy bottom edge.
+    const b = y + h * 0.82;
+    c.moveTo(x, y);
+    c.lineTo(x + w, y);
+    c.lineTo(x + w, b);
+    c.bezierCurveTo(x + w * 0.66, y + h * 1.08, x + w * 0.33, y + h * 0.6, x, b);
+    c.closePath();
+  } else if (type === 'cylinder') {
+    // Database cylinder.
+    const ry = Math.min(h * 0.16, 22);
+    c.moveTo(x, y + ry);
+    c.lineTo(x, y + h - ry);
+    c.ellipse(cx, y + h - ry, w / 2, ry, 0, Math.PI, 0, true);
+    c.lineTo(x + w, y + ry);
+    c.ellipse(cx, y + ry, w / 2, ry, 0, 0, Math.PI * 2);
+  } else if (type === 'delay') {
+    // Half-rounded "delay" symbol.
+    const split = x + w * 0.55;
+    c.moveTo(x, y);
+    c.lineTo(split, y);
+    c.ellipse(split, cy, w * 0.45, h / 2, 0, -Math.PI / 2, Math.PI / 2);
+    c.lineTo(x, y + h);
+    c.closePath();
+  } else if (type === 'display') {
+    // Flowchart "display": pointed left, rounded right.
+    const split = x + w * 0.82;
+    c.moveTo(x + w * 0.15, y);
+    c.lineTo(split, y);
+    c.ellipse(split, cy, w * 0.18, h / 2, 0, -Math.PI / 2, Math.PI / 2);
+    c.lineTo(x + w * 0.15, y + h);
+    c.lineTo(x, cy);
     c.closePath();
   }
 }
@@ -252,6 +480,69 @@ function strokeArrow(c, x1, y1, x2, y2, color, lw) {
   c.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
   c.moveTo(x2, y2);
   c.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
+  c.stroke();
+  c.restore();
+}
+
+function strokeLine(c, x1, y1, x2, y2, color, lw) {
+  c.save();
+  c.globalCompositeOperation = 'source-over';
+  c.strokeStyle = color;
+  c.lineWidth = lw;
+  c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(x1, y1);
+  c.lineTo(x2, y2);
+  c.stroke();
+  c.restore();
+}
+
+// Render a freehand pen stroke (a polyline through its captured points).
+function strokeFreehand(c, pts, color, lw) {
+  if (!pts || pts.length === 0) return;
+  c.save();
+  c.globalCompositeOperation = 'source-over';
+  c.strokeStyle = color;
+  c.fillStyle = color;
+  c.lineWidth = lw;
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  if (pts.length === 1) {
+    c.beginPath();
+    c.arc(pts[0][0], pts[0][1], lw / 2, 0, Math.PI * 2);
+    c.fill();
+  } else {
+    c.beginPath();
+    c.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+    c.stroke();
+  }
+  c.restore();
+}
+
+function strokeDoubleArrow(c, x1, y1, x2, y2, color, lw) {
+  const head = Math.max(10, lw * 3 + 6);
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  c.save();
+  c.globalCompositeOperation = 'source-over';
+  c.strokeStyle = color;
+  c.lineWidth = lw;
+  c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(x1, y1);
+  c.lineTo(x2, y2);
+  c.stroke();
+  c.beginPath();
+  // Head at the end
+  c.moveTo(x2, y2);
+  c.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
+  c.moveTo(x2, y2);
+  c.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
+  // Head at the start
+  c.moveTo(x1, y1);
+  c.lineTo(x1 + head * Math.cos(angle - Math.PI / 6), y1 + head * Math.sin(angle - Math.PI / 6));
+  c.moveTo(x1, y1);
+  c.lineTo(x1 + head * Math.cos(angle + Math.PI / 6), y1 + head * Math.sin(angle + Math.PI / 6));
   c.stroke();
   c.restore();
 }
@@ -297,10 +588,52 @@ function drawShape(c, s) {
   if (s.type === 'arrow') {
     const [p1, p2] = arrowEnds(s);
     strokeArrow(c, p1.x, p1.y, p2.x, p2.y, s.color, s.lineWidth);
+  } else if (s.type === 'doublearrow') {
+    const [p1, p2] = arrowEnds(s);
+    strokeDoubleArrow(c, p1.x, p1.y, p2.x, p2.y, s.color, s.lineWidth);
+  } else if (s.type === 'line') {
+    const [p1, p2] = arrowEnds(s);
+    strokeLine(c, p1.x, p1.y, p2.x, p2.y, s.color, s.lineWidth);
+  } else if (s.type === 'stroke') {
+    strokeFreehand(c, s.pts, s.color, s.lineWidth);
   } else {
     strokeBox(c, s.type, s.x, s.y, s.w, s.h, s.color, s.lineWidth);
     if (s !== editingBox && s.text) fillBoxText(c, s.type, s.x, s.y, s.w, s.h, s.text, s.color);
   }
+}
+
+// Draw the active template's background pattern (grid / dots / lines) onto a
+// context that has already been filled with the surface colour.
+function drawPaperPattern(c) {
+  const pattern = tpl().pattern;
+  if (!pattern) return;
+  const step = 28;
+  c.save();
+  c.globalCompositeOperation = 'source-over';
+  if (pattern === 'grid') {
+    c.strokeStyle = 'rgba(60, 90, 160, 0.12)';
+    c.lineWidth = 1;
+    c.beginPath();
+    for (let x = step; x < W; x += step) { c.moveTo(x, 0); c.lineTo(x, H); }
+    for (let y = step; y < H; y += step) { c.moveTo(0, y); c.lineTo(W, y); }
+    c.stroke();
+  } else if (pattern === 'dots') {
+    c.fillStyle = 'rgba(40, 40, 60, 0.22)';
+    for (let x = step; x < W; x += step) {
+      for (let y = step; y < H; y += step) {
+        c.beginPath();
+        c.arc(x, y, 1.3, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+  } else if (pattern === 'lines') {
+    c.strokeStyle = 'rgba(150, 120, 60, 0.30)';
+    c.lineWidth = 1;
+    c.beginPath();
+    for (let y = step; y < H; y += step) { c.moveTo(0, y); c.lineTo(W, y); }
+    c.stroke();
+  }
+  c.restore();
 }
 
 // ─── Compositing ───
@@ -309,39 +642,54 @@ function render() {
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = canvasBgColor();
   ctx.fillRect(0, 0, W, H);
+  drawPaperPattern(ctx);
   ctx.drawImage(inkCanvas, 0, 0);
   for (const s of shapes) drawShape(ctx, s);
-  if (currentTool === 'select' && selectedId) drawSelection();
+  if (showsSelection() && selectedIds.length) drawSelection();
 }
 
+// Both Select and Lasso show and manipulate the current selection.
+function showsSelection() { return currentTool === 'select' || currentTool === 'lasso'; }
+
 function drawSelection() {
-  const s = shapeById(selectedId);
-  if (!s) return;
-  ctx.save();
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.strokeStyle = ACCENT;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([6, 4]);
-  if (s.type === 'arrow') {
-    const [p1, p2] = arrowEnds(s);
-    ctx.setLineDash([]);
-    for (const p of [p1, p2]) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = '#fff';
-      ctx.fill();
-      ctx.stroke();
+  // Resize handles only when exactly one shape is selected; a multi-selection
+  // just gets an outline per element.
+  const single = selectedIds.length === 1;
+  for (const id of selectedIds) {
+    const s = shapeById(id);
+    if (!s) continue;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = ACCENT;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    if (isLineType(s.type)) {
+      const [p1, p2] = arrowEnds(s);
+      ctx.setLineDash([]);
+      for (const p of [p1, p2]) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else if (isStroke(s)) {
+      const b = strokeBounds(s);
+      const pad = Math.max(4, s.lineWidth / 2);
+      ctx.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
+    } else {
+      ctx.strokeRect(s.x, s.y, s.w, s.h);
+      ctx.setLineDash([]);
+      if (single) {
+        for (const [cx, cy] of boxCorners(s)) {
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(cx - HANDLE_DRAW / 2, cy - HANDLE_DRAW / 2, HANDLE_DRAW, HANDLE_DRAW);
+          ctx.strokeRect(cx - HANDLE_DRAW / 2, cy - HANDLE_DRAW / 2, HANDLE_DRAW, HANDLE_DRAW);
+        }
+      }
     }
-  } else {
-    ctx.strokeRect(s.x, s.y, s.w, s.h);
-    ctx.setLineDash([]);
-    for (const [cx, cy] of boxCorners(s)) {
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(cx - HANDLE_DRAW / 2, cy - HANDLE_DRAW / 2, HANDLE_DRAW, HANDLE_DRAW);
-      ctx.strokeRect(cx - HANDLE_DRAW / 2, cy - HANDLE_DRAW / 2, HANDLE_DRAW, HANDLE_DRAW);
-    }
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 function boxCorners(b) {
@@ -369,8 +717,12 @@ ctx.lineJoin = 'round';
 // Restore from localStorage if present, otherwise create a blank first page
 const persisted = loadPersistedState();
 if (persisted) {
-  theme = persisted.theme === 'light' ? 'light' : 'dark';
-  document.body.classList.toggle('light-theme', theme === 'light');
+  if (persisted.template && TEMPLATES[persisted.template]) {
+    template = persisted.template;
+  } else if (persisted.theme) {
+    // Backward-compat: the old binary theme toggle.
+    template = persisted.theme === 'light' ? 'blackboard' : 'whiteboard';
+  }
   pages = persisted.pages.map(p => {
     // Backward-compat: older saves stored a flattened bitmap as `data`.
     const ink = p.ink || p.data || transparentInk();
@@ -387,7 +739,9 @@ if (persisted) {
 }
 renderPageStrip();
 
-function cloneShapes(arr) { return arr.map(s => ({ ...s })); }
+function cloneShapes(arr) {
+  return arr.map(s => (s.pts ? { ...s, pts: s.pts.map(p => p.slice()) } : { ...s }));
+}
 
 function makeBlankPage() {
   const ink = transparentInk();
@@ -402,6 +756,7 @@ function flattenInkAndShapes(inkImg, shapeArr) {
   const t = tmp.getContext('2d');
   t.fillStyle = canvasBgColor();
   t.fillRect(0, 0, W, H);
+  drawPaperPattern(t);
   if (inkImg) t.drawImage(inkImg, 0, 0);
   else t.drawImage(inkCanvas, 0, 0);
   const prevEditing = editingBox; editingBox = null;
@@ -460,6 +815,62 @@ function resetAllPages() {
   showToast('All pages reset');
 }
 
+// Wipe the contents of every page but keep the page count and order.
+function clearAllPages() {
+  if (!confirm('Clear the contents of all pages? This cannot be undone.')) return;
+  pages.forEach(p => {
+    p.ink = transparentInk();
+    p.shapes = [];
+    p.undoStack = [{ ink: p.ink, shapes: [] }];
+  });
+  shapes = pages[currentPage].shapes;
+  clearSelection();
+  loadPage(currentPage);
+  flattenAllThumbnails();
+  renderPageStrip();
+  persistState();
+  showToast('All pages cleared');
+}
+
+// Position the dashed insertion line at gap `pos` (0..pages.length).
+function showDropIndicator(pos) {
+  dropInsertPos = pos;
+  const thumbs = pageStripInner.querySelectorAll('.page-thumb');
+  if (thumbs.length === 0) return;
+  const gap = 8;
+  let x;
+  if (pos >= thumbs.length) {
+    const last = thumbs[thumbs.length - 1];
+    x = last.offsetLeft + last.offsetWidth + gap / 2;
+  } else {
+    x = thumbs[pos].offsetLeft - gap / 2;
+  }
+  dropIndicator.style.left = x + 'px';
+  dropIndicator.classList.add('visible');
+}
+
+function hideDropIndicator() {
+  dropIndicator.classList.remove('visible');
+  dropInsertPos = null;
+}
+
+// Move a page into gap `insertPos` (drag-and-drop reorder).
+function movePage(from, insertPos) {
+  if (from === null || from === undefined || insertPos === null) return;
+  if (insertPos === from || insertPos === from + 1) return; // dropped in place
+  if (editing) commitTextEditor();
+  commitCurrentPage();
+  const current = pages[currentPage]; // remember which page is active by identity
+  const moved = pages.splice(from, 1)[0];
+  const target = from < insertPos ? insertPos - 1 : insertPos;
+  pages.splice(target, 0, moved);
+  currentPage = pages.indexOf(current);
+  shapes = pages[currentPage].shapes;
+  renderPageStrip();
+  persistState();
+  showToast('Pages reordered');
+}
+
 function switchPage(index) {
   if (index === currentPage) return;
   if (editing) commitTextEditor();
@@ -480,7 +891,7 @@ function commitCurrentPage() {
 function loadPage(index) {
   const page = pages[index];
   shapes = page.shapes;
-  selectedId = null;
+  clearSelection();
   dragState = null;
   const img = new Image();
   img.onload = () => {
@@ -504,10 +915,43 @@ function renderPageStrip() {
   pages.forEach((page, i) => {
     const thumb = document.createElement('div');
     thumb.className = 'page-thumb' + (i === currentPage ? ' active' : '');
-    thumb.addEventListener('click', () => switchPage(i));
+    thumb.addEventListener('click', () => { if (!justDragged) switchPage(i); });
+
+    // Drag-and-drop reordering with a dashed insertion line
+    thumb.draggable = true;
+    thumb.addEventListener('dragstart', (e) => {
+      dragPageIndex = i;
+      justDragged = false;
+      thumb.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(i));
+    });
+    thumb.addEventListener('dragend', () => {
+      thumb.classList.remove('dragging');
+      hideDropIndicator();
+      dragPageIndex = null;
+      // Swallow the click that fires right after a drag.
+      setTimeout(() => { justDragged = false; }, 0);
+    });
+    thumb.addEventListener('dragover', (e) => {
+      if (dragPageIndex === null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const r = thumb.getBoundingClientRect();
+      const after = (e.clientX - r.left) > r.width / 2;
+      showDropIndicator(after ? i + 1 : i);
+    });
+    thumb.addEventListener('drop', (e) => {
+      e.preventDefault();
+      justDragged = true;
+      const pos = dropInsertPos;
+      hideDropIndicator();
+      movePage(dragPageIndex, pos);
+    });
 
     const img = document.createElement('img');
     img.src = page.data;
+    img.draggable = false; // let the parent .page-thumb own the drag, not the image
     thumb.appendChild(img);
 
     const label = document.createElement('div');
@@ -525,6 +969,7 @@ function renderPageStrip() {
     }
     pageStripInner.appendChild(thumb);
   });
+  pageStripInner.appendChild(dropIndicator);
 
   const activeThumb = pageStripInner.querySelector('.page-thumb.active');
   if (activeThumb) activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
@@ -532,7 +977,17 @@ function renderPageStrip() {
 }
 
 btnAddPage.addEventListener('click', addPage);
-btnResetPages.addEventListener('click', resetAllPages);
+
+// Clear / reset dropdown menu
+document.querySelectorAll('#resetPanel .menu-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const action = item.dataset.reset;
+    if (action === 'current') clearCanvas();
+    else if (action === 'all') clearAllPages();
+    else if (action === 'delete') resetAllPages();
+    closeDropdowns();
+  });
+});
 
 // ─── Undo (per-page) ───
 function saveUndoState() {
@@ -548,7 +1003,7 @@ function undo() {
   const snap = page.undoStack[page.undoStack.length - 1];
   page.shapes = cloneShapes(snap.shapes);
   shapes = page.shapes;
-  selectedId = null;
+  clearSelection();
   const img = new Image();
   img.onload = () => {
     inkCtx.clearRect(0, 0, W, H);
@@ -565,25 +1020,30 @@ function setTool(tool) {
   if (editing) commitTextEditor();
 
   if (tool === 'lasso' && currentTool !== 'lasso') previousTool = currentTool;
-  if (tool !== 'select') selectedId = null;
+  if (tool !== 'select') clearSelection();
   currentTool = tool;
 
   btnSelect.classList.toggle('active', tool === 'select');
   btnPen.classList.toggle('active', tool === 'pen');
   btnEraser.classList.toggle('active', tool === 'eraser');
   btnLasso.classList.toggle('active', tool === 'lasso');
-  btnLine.classList.toggle('active', tool === 'line');
-  btnCircle.classList.toggle('active', tool === 'circle');
-  btnRect.classList.toggle('active', tool === 'rect');
-  btnRoundRect.classList.toggle('active', tool === 'roundrect');
-  btnDiamond.classList.toggle('active', tool === 'diamond');
-  btnArrow.classList.toggle('active', tool === 'arrow');
+
+  // Dropdown triggers light up when their tool is the active one; the chosen
+  // palette item is marked so re-opening the menu shows the current selection.
+  const def = TOOL_DEFS[tool];
+  // NB: coerce to a real boolean — classList.toggle(class, undefined) *flips*
+  // the class instead of removing it, which would leave triggers stuck "on".
+  btnShapes.classList.toggle('active', !!def && def.menu === 'shapes');
+  btnProcess.classList.toggle('active', !!def && def.menu === 'process');
+  document.querySelectorAll('.palette-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.tool === tool);
+  });
 
   canvas.classList.toggle('eraser-cursor', tool === 'eraser');
   canvas.classList.toggle('lasso-cursor', tool === 'lasso');
   canvas.classList.toggle('pen-cursor', tool === 'pen');
   canvas.classList.toggle('select-cursor', tool === 'select');
-  canvas.classList.toggle('shape-cursor', SHAPE_TOOLS.includes(tool));
+  canvas.classList.toggle('shape-cursor', isShapeTool(tool));
   canvas.style.cursor = '';
   if (tool !== 'eraser') hideEraserCursor();
 
@@ -605,8 +1065,15 @@ function syncSizeControl() {
   brushSize.max = range.max;
   brushSize.value = toolSizes[sizeKey];
   const labels = {
-    pen: 'Pen', eraser: 'Eraser', line: 'Line', circle: 'Circle',
-    rect: 'Box', roundrect: 'Rounded', diamond: 'Diamond', arrow: 'Arrow',
+    pen: 'Pen', eraser: 'Eraser',
+    rect: 'Rect', roundrect: 'Rounded', circle: 'Circle', triangle: 'Triangle',
+    righttriangle: 'R.Triangle', diamond: 'Diamond', pentagon: 'Pentagon',
+    hexagon: 'Hexagon', star: 'Star', parallelogram: 'Parallel', trapezoid: 'Trapezoid',
+    line: 'Line', arrow: 'Arrow', doublearrow: 'Dbl Arrow',
+    process: 'Process', decision: 'Decision', terminator: 'Start/End', data: 'Data',
+    document: 'Document', subroutine: 'Subroutine', database: 'Database',
+    manualinput: 'Input', preparation: 'Preparation', offpage: 'Off-page',
+    onpage: 'On-page', delay: 'Delay', display: 'Display', connector: 'Connector',
   };
   sizeLabel.textContent = labels[currentTool] || 'Size';
   sizeValue.textContent = brushSize.value + 'px';
@@ -616,14 +1083,54 @@ btnSelect.addEventListener('click', () => setTool('select'));
 btnPen.addEventListener('click', () => setTool('pen'));
 btnEraser.addEventListener('click', () => setTool('eraser'));
 btnLasso.addEventListener('click', () => setTool('lasso'));
-btnLine.addEventListener('click', () => setTool('line'));
-btnCircle.addEventListener('click', () => setTool('circle'));
-btnRect.addEventListener('click', () => setTool('rect'));
-btnRoundRect.addEventListener('click', () => setTool('roundrect'));
-btnDiamond.addEventListener('click', () => setTool('diamond'));
-btnArrow.addEventListener('click', () => setTool('arrow'));
 
-// ─── Theme Toggle (inverts canvas: white ↔ black) ───
+// ─── Dropdown menus (Shapes / Process / Color / Template) ───
+const dropdowns = [...document.querySelectorAll('.dropdown')];
+
+function closeDropdowns(except) {
+  dropdowns.forEach(dd => {
+    if (dd === except) return;
+    dd.querySelector('.dropdown-panel').classList.remove('open');
+    dd.querySelector('.dropdown-trigger').classList.remove('open');
+  });
+}
+
+function toggleDropdown(dd) {
+  const panel = dd.querySelector('.dropdown-panel');
+  const trigger = dd.querySelector('.dropdown-trigger');
+  const willOpen = !panel.classList.contains('open');
+  closeDropdowns(dd);
+  panel.classList.toggle('open', willOpen);
+  trigger.classList.toggle('open', willOpen);
+}
+
+dropdowns.forEach(dd => {
+  dd.querySelector('.dropdown-trigger').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleDropdown(dd);
+  });
+});
+
+// Pick a shape/process tool from a palette and remember it on the trigger icon.
+document.querySelectorAll('.palette-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const tool = item.dataset.tool;
+    setTool(tool);
+    // Mirror the chosen glyph onto the dropdown trigger.
+    const def = TOOL_DEFS[tool];
+    const svg = item.querySelector('svg');
+    if (def && svg) {
+      const targetIcon = def.menu === 'shapes' ? shapesIcon : processIcon;
+      targetIcon.innerHTML = svg.innerHTML;
+    }
+    closeDropdowns();
+  });
+});
+
+// Close any open dropdown when clicking elsewhere.
+document.addEventListener('click', () => closeDropdowns());
+
+// ─── Ink / colour helpers ───
 function invertImageDataURL(dataURL) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -657,37 +1164,98 @@ function invertHex(hex) {
   return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
 }
 
-async function toggleTheme() {
+// ─── Template (paper style) ───
+function applyCanvasBg() {
+  canvas.style.background = canvasBgColor();
+}
+
+function setColor(hex) {
+  colorPicker.value = hex;
+  colorSwatch.style.background = hex;
+  document.querySelectorAll('.swatch').forEach(sw => {
+    sw.classList.toggle('active', (sw.dataset.color || '').toLowerCase() === hex.toLowerCase());
+  });
+}
+
+async function setTemplate(name) {
+  if (!TEMPLATES[name] || name === template) { closeDropdowns(); return; }
   commitCurrentPage();
 
-  theme = theme === 'dark' ? 'light' : 'dark';
-  document.body.classList.toggle('light-theme', theme === 'light');
+  const prev = TEMPLATES[template];
+  const next = TEMPLATES[name];
+  const crossesDark = prev.dark !== next.dark;
 
-  for (const page of pages) {
-    page.ink = await invertImageDataURL(page.ink);
-    page.shapes.forEach(s => { s.color = invertHex(s.color); });
-    page.undoStack = await Promise.all(page.undoStack.map(async (snap) => ({
-      ink: await invertImageDataURL(snap.ink),
-      shapes: snap.shapes.map(s => ({ ...s, color: invertHex(s.color) })),
-    })));
+  // Crossing the light/dark boundary recolours existing ink so it stays visible.
+  if (crossesDark) {
+    for (const page of pages) {
+      page.ink = await invertImageDataURL(page.ink);
+      page.shapes.forEach(s => { s.color = invertHex(s.color); });
+      page.undoStack = await Promise.all(page.undoStack.map(async (snap) => ({
+        ink: await invertImageDataURL(snap.ink),
+        shapes: snap.shapes.map(s => ({ ...s, color: invertHex(s.color) })),
+      })));
+    }
+    // Flip the default pen colour if it still matches the old template's default.
+    if (colorPicker.value.toLowerCase() === prev.ink.toLowerCase()) {
+      setColor(next.ink);
+    }
   }
 
-  // Flip default pen colour if user is still on the previous default
-  if (colorPicker.value.toLowerCase() === (theme === 'light' ? '#000000' : '#ffffff')) {
-    const inverted = theme === 'light' ? '#ffffff' : '#000000';
-    colorPicker.value = inverted;
-    document.getElementById('colorSwatch').style.background = inverted;
-  }
+  template = name;
+  applyCanvasBg();
+
+  // Reflect the active template in the dropdown.
+  document.querySelectorAll('.template-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.template === name);
+  });
 
   shapes = pages[currentPage].shapes;
   loadPage(currentPage);
   flattenAllThumbnails();
   renderPageStrip();
+  closeDropdowns();
   persistState();
-  showToast(theme === 'light' ? 'Chalkboard mode' : 'Whiteboard mode');
+  showToast(`${name.charAt(0).toUpperCase() + name.slice(1)} template`);
 }
 
-btnTheme.addEventListener('click', toggleTheme);
+document.querySelectorAll('.template-item').forEach(item => {
+  item.addEventListener('click', () => setTemplate(item.dataset.template));
+});
+
+// ─── Colour palette ───
+const PALETTE = [
+  '#111111', '#444444', '#808080', '#b8b8b8', '#e0e0e0', '#ffffff',
+  '#cc0000', '#e84040', '#ff7373', '#ff57a8', '#d90084', '#9c27b0',
+  '#8b4513', '#ff7300', '#ff9900', '#ffc107', '#ffd600', '#d6d633',
+  '#338033', '#4caf50', '#2ecc71', '#00bcbc', '#0078ff', '#1a4dcc',
+];
+
+function buildPalette() {
+  PALETTE.forEach(hex => {
+    const sw = document.createElement('button');
+    sw.className = 'swatch';
+    sw.dataset.color = hex;
+    sw.style.background = hex;
+    sw.title = hex;
+    sw.addEventListener('click', (e) => {
+      e.stopPropagation();
+      applyColor(hex);
+      closeDropdowns();
+    });
+    swatchGrid.appendChild(sw);
+  });
+}
+
+// Apply a colour to the pen and to every selected shape.
+function applyColor(hex) {
+  setColor(hex);
+  if (currentTool === 'select' && selectedIds.length) {
+    let changed = false;
+    selectedIds.forEach(id => { const s = shapeById(id); if (s) { s.color = hex; changed = true; } });
+    if (changed) { render(); saveUndoState(); syncCurrentPage(); }
+  }
+  if (currentTool === 'eraser') setTool('pen');
+}
 
 // ─── Brush Size ───
 brushSize.addEventListener('input', () => {
@@ -698,16 +1266,8 @@ brushSize.addEventListener('input', () => {
   if (currentTool === 'eraser' && lastPointer) updateEraserCursor(lastPointer);
 });
 
-// ─── Color Picker ───
-colorPicker.addEventListener('input', () => {
-  document.getElementById('colorSwatch').style.background = colorPicker.value;
-  // Recolour the selected shape, if any
-  if (currentTool === 'select' && selectedId) {
-    const s = shapeById(selectedId);
-    if (s) { s.color = colorPicker.value; render(); saveUndoState(); syncCurrentPage(); }
-  }
-  if (currentTool === 'eraser') setTool('pen');
-});
+// ─── Custom Color Picker (inside the palette dropdown) ───
+colorPicker.addEventListener('input', () => applyColor(colorPicker.value));
 
 // ─── Position Helper ───
 function getPosition(e) {
@@ -759,23 +1319,16 @@ function drawLassoPreview() {
 }
 
 function commitLasso() {
-  if (lassoPoints.length >= 3) {
-    // Erase the enclosed ink (shapes are vector — delete them with Select).
-    inkCtx.save();
-    inkCtx.globalCompositeOperation = 'destination-out';
-    inkCtx.beginPath();
-    inkCtx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
-    for (let i = 1; i < lassoPoints.length; i++) inkCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
-    inkCtx.closePath();
-    inkCtx.fill();
-    inkCtx.restore();
-    saveUndoState();
-    syncCurrentPage();
-    showToast('Region erased');
-  }
+  // Free-form select: every element the lasso loop (auto-closed) catches becomes
+  // part of the selection. The lasso tool stays active — press on any selected
+  // element afterwards to drag the whole group, or lasso again to reselect.
+  const ids = lassoPoints.length >= 3
+    ? shapes.filter(s => lassoHits(s, lassoPoints)).map(s => s.id)
+    : [];
   lassoPoints = [];
+  selectedIds = ids;
   render();
-  setTool(previousTool === 'lasso' ? 'pen' : previousTool);
+  if (ids.length) showToast(`${ids.length} element${ids.length > 1 ? 's' : ''} selected — drag to move`);
 }
 
 // ─── Floating text editor for box labels ───
@@ -795,7 +1348,7 @@ function canvasToScreenRect(x1, y1, x2, y2) {
 function openBoxEditor(box) {
   editing = box;
   editingBox = box;
-  selectedId = box.id;
+  selectOnly(box.id);
   const r = canvasToScreenRect(box.x, box.y, box.x + box.w, box.y + box.h);
   const inset = box.type === 'diamond' ? 0.24 : 0.12;
   const padX = r.width * inset;
@@ -851,29 +1404,31 @@ function finishShape() {
   const start = lineStart;
   const end = shapeEnd || start;
   const tool = currentTool;
+  const def = TOOL_DEFS[tool];
   lineStart = null;
   shapeEnd = null;
-  if (!start) { render(); return; }
+  if (!start || !def) { render(); return; }
 
   const size = Number(brushSize.value);
 
-  if (tool === 'arrow') {
+  // Line-like tools: line (no head), arrow & connector (with head, connector snaps).
+  if (def.lineLike) {
     if (Math.hypot(end.x - start.x, end.y - start.y) < 6) { render(); return; }
-    const from = boxAt(start, SNAP_MARGIN);
-    const to = boxAt(end, SNAP_MARGIN);
+    const from = def.snap ? boxAt(start, SNAP_MARGIN) : null;
+    const to = def.snap ? boxAt(end, SNAP_MARGIN) : null;
     const s = {
-      id: newId(), type: 'arrow',
+      id: newId(), type: def.type,
       x1: start.x, y1: start.y, x2: end.x, y2: end.y,
       from: from ? from.id : null,
       to: to ? to.id : null,
       color: colorPicker.value, lineWidth: size,
     };
     shapes.push(s);
-    selectedId = s.id;
+    selectOnly(s.id);
     render();
     saveUndoState();
     syncCurrentPage();
-    if (from || to) showToast('Arrow snapped to box');
+    if (from || to) showToast('Connector snapped to box');
     return;
   }
 
@@ -893,36 +1448,58 @@ function finishShape() {
 
   const b = normBounds(x1, y1, x2, y2);
   const s = {
-    id: newId(), type: tool,
+    id: newId(), type: def.type,
     x: b.x, y: b.y, w: b.w, h: b.h,
     text: '', color: colorPicker.value, lineWidth: size,
   };
   shapes.push(s);
+  selectOnly(s.id);
   render();
-  openBoxEditor(s);
+  // Flowchart nodes open the label editor immediately; plain shapes just select.
+  if (def.autoEdit) {
+    openBoxEditor(s);
+  } else {
+    saveUndoState();
+    syncCurrentPage();
+  }
 }
 
 // ─── Select / Move / Resize interactions ───
-function startSelect(pos) {
-  const sel = selectedId ? shapeById(selectedId) : null;
-  if (sel && sel.type !== 'arrow') {
-    const h = handleAt(pos, sel);
-    if (h) { dragState = { mode: 'resize', box: sel, handle: h, moved: false }; return; }
+// Build the drag state for moving every selected shape together.
+function startGroupMove(pos) {
+  const items = selectedIds.map(id => shapeById(id)).filter(Boolean).map(s => {
+    if (isLineType(s.type)) return { shape: s, kind: 'line', orig: { x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2 } };
+    if (isStroke(s)) return { shape: s, kind: 'stroke', orig: { pts: s.pts.map(p => p.slice()) } };
+    return { shape: s, kind: 'box', orig: { x: s.x, y: s.y } };
+  });
+  return { mode: 'move', start: pos, items, moved: false, single: items.length === 1 };
+}
+
+function startSelect(pos, additive) {
+  // Resize only when exactly one box-like shape is selected and a handle is grabbed.
+  if (selectedIds.length === 1) {
+    const sel = shapeById(selectedIds[0]);
+    if (sel && isBoxLike(sel)) {
+      const h = handleAt(pos, sel);
+      if (h) { dragState = { mode: 'resize', box: sel, handle: h, moved: false }; render(); return; }
+    }
   }
 
   const hit = shapeAt(pos);
   if (hit) {
-    selectedId = hit.id;
-    if (hit.type === 'arrow') {
-      dragState = {
-        mode: 'arrowmove', shape: hit, start: pos,
-        orig: { x1: hit.x1, y1: hit.y1, x2: hit.x2, y2: hit.y2 }, moved: false,
-      };
+    if (additive) {
+      // Shift-click toggles a shape in/out of the selection (no drag).
+      if (isSelected(hit.id)) selectedIds = selectedIds.filter(id => id !== hit.id);
+      else selectedIds.push(hit.id);
+      dragState = null;
     } else {
-      dragState = { mode: 'move', box: hit, start: pos, orig: { x: hit.x, y: hit.y }, moved: false };
+      // Clicking a shape outside the current selection selects just it; clicking
+      // one already in the selection keeps the whole group, so it moves together.
+      if (!isSelected(hit.id)) selectOnly(hit.id);
+      dragState = startGroupMove(pos);
     }
   } else {
-    selectedId = null;
+    if (!additive) clearSelection();
     dragState = null;
   }
   render();
@@ -932,16 +1509,21 @@ function moveSelect(pos) {
   if (!dragState) return;
   dragState.moved = true;
   if (dragState.mode === 'move') {
-    const b = dragState.box;
-    b.x = dragState.orig.x + (pos.x - dragState.start.x);
-    b.y = dragState.orig.y + (pos.y - dragState.start.y);
-  } else if (dragState.mode === 'arrowmove') {
-    const s = dragState.shape;
-    // Translating an arrow detaches it so it stays where you drop it.
-    s.from = null; s.to = null;
     const dx = pos.x - dragState.start.x, dy = pos.y - dragState.start.y;
-    s.x1 = dragState.orig.x1 + dx; s.y1 = dragState.orig.y1 + dy;
-    s.x2 = dragState.orig.x2 + dx; s.y2 = dragState.orig.y2 + dy;
+    for (const it of dragState.items) {
+      const s = it.shape;
+      if (it.kind === 'line') {
+        // A lone line/arrow drag detaches so it follows the cursor; in a group
+        // move keep bindings so bound connectors track their boxes.
+        if (dragState.single) { s.from = null; s.to = null; }
+        s.x1 = it.orig.x1 + dx; s.y1 = it.orig.y1 + dy;
+        s.x2 = it.orig.x2 + dx; s.y2 = it.orig.y2 + dy;
+      } else if (it.kind === 'stroke') {
+        s.pts = it.orig.pts.map(p => [p[0] + dx, p[1] + dy]);
+      } else {
+        s.x = it.orig.x + dx; s.y = it.orig.y + dy;
+      }
+    }
   } else if (dragState.mode === 'resize') {
     const b = dragState.box;
     let x1 = b.x, y1 = b.y, x2 = b.x + b.w, y2 = b.y + b.h;
@@ -962,33 +1544,86 @@ function endSelect() {
 }
 
 function updateSelectCursor(pos) {
-  const sel = selectedId ? shapeById(selectedId) : null;
-  if (sel && sel.type !== 'arrow') {
-    const h = handleAt(pos, sel);
-    if (h === 'nw' || h === 'se') { canvas.style.cursor = 'nwse-resize'; return; }
-    if (h === 'ne' || h === 'sw') { canvas.style.cursor = 'nesw-resize'; return; }
+  if (selectedIds.length === 1) {
+    const sel = shapeById(selectedIds[0]);
+    if (sel && isBoxLike(sel)) {
+      const h = handleAt(pos, sel);
+      if (h === 'nw' || h === 'se') { canvas.style.cursor = 'nwse-resize'; return; }
+      if (h === 'ne' || h === 'sw') { canvas.style.cursor = 'nesw-resize'; return; }
+    }
   }
-  canvas.style.cursor = shapeAt(pos) ? 'move' : 'default';
+  canvas.style.cursor = shapeAt(pos) ? 'move' : (currentTool === 'lasso' ? 'crosshair' : 'default');
 }
 
 function deleteSelected() {
-  if (!selectedId) return;
-  const i = shapes.findIndex(s => s.id === selectedId);
-  if (i < 0) return;
-  const removed = shapes[i];
-  shapes.splice(i, 1);
-  // Detach any arrows that were bound to the removed box.
+  if (!selectedIds.length) return;
+  const removeSet = new Set(selectedIds);
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    if (removeSet.has(shapes[i].id)) shapes.splice(i, 1);
+  }
+  // Detach any connectors/lines that were bound to a removed box.
   shapes.forEach(s => {
-    if (s.type === 'arrow') {
-      if (s.from === removed.id) s.from = null;
-      if (s.to === removed.id) s.to = null;
+    if (isLineType(s.type)) {
+      if (removeSet.has(s.from)) s.from = null;
+      if (removeSet.has(s.to)) s.to = null;
     }
   });
-  selectedId = null;
+  const n = removeSet.size;
+  clearSelection();
   render();
   saveUndoState();
   syncCurrentPage();
-  showToast('Deleted');
+  showToast(n > 1 ? `${n} deleted` : 'Deleted');
+}
+
+// ─── Eraser (works on legacy raster ink + vector strokes) ───
+// Split every freehand stroke around the points falling inside the eraser
+// circle, dropping tiny leftover fragments.
+function eraseStrokesAt(pos, radius) {
+  let changed = false;
+  const next = [];
+  for (const s of shapes) {
+    if (!isStroke(s)) { next.push(s); continue; }
+    const runs = [];
+    let run = [];
+    for (const p of s.pts) {
+      if (Math.hypot(p[0] - pos.x, p[1] - pos.y) <= radius) {
+        if (run.length) { runs.push(run); run = []; }
+        changed = true;
+      } else {
+        run.push(p);
+      }
+    }
+    if (run.length) runs.push(run);
+    if (runs.length === 1 && runs[0].length === s.pts.length) {
+      next.push(s); // untouched
+    } else {
+      changed = true;
+      for (const r of runs) {
+        if (r.length >= 2) next.push({ id: newId(), type: 'stroke', pts: r, color: s.color, lineWidth: s.lineWidth });
+      }
+    }
+  }
+  if (changed) { shapes.length = 0; shapes.push(...next); }
+  return changed;
+}
+
+function eraseAt(pos) {
+  // Legacy raster ink: punch a hole along the drag.
+  inkCtx.save();
+  inkCtx.globalCompositeOperation = 'destination-out';
+  inkCtx.lineWidth = toolSizes.eraser;
+  inkCtx.lineCap = 'round';
+  inkCtx.beginPath();
+  inkCtx.moveTo(lastX, lastY);
+  inkCtx.lineTo(pos.x, pos.y);
+  inkCtx.stroke();
+  inkCtx.beginPath();
+  inkCtx.arc(pos.x, pos.y, toolSizes.eraser / 2, 0, Math.PI * 2);
+  inkCtx.fill();
+  inkCtx.restore();
+  // Vector strokes: split/remove points within the eraser radius.
+  eraseStrokesAt(pos, toolSizes.eraser / 2);
 }
 
 // ─── Drawing dispatch ───
@@ -998,41 +1633,44 @@ function startDraw(e) {
 
   if (currentTool === 'select') {
     isDrawing = true;
-    startSelect(pos);
+    startSelect(pos, e.shiftKey);
     return;
   }
 
   if (currentTool === 'lasso') {
     isDrawing = true;
-    lassoPoints = [pos];
+    // Press on an element → move it (or the whole selection); empty space → lasso.
+    if (shapeAt(pos)) {
+      lassoMoving = true;
+      startSelect(pos, e.shiftKey);
+    } else {
+      lassoMoving = false;
+      if (!e.shiftKey) clearSelection();
+      lassoPoints = [pos];
+      render();
+    }
     return;
   }
 
-  if (currentTool === 'line' || currentTool === 'circle' || SHAPE_TOOLS.includes(currentTool)) {
+  if (isShapeTool(currentTool)) {
     isDrawing = true;
     lineStart = pos;
     shapeEnd = pos;
     return;
   }
 
-  // pen / eraser — draw directly onto the ink layer
+  // pen → new vector stroke; eraser → remove ink + strokes under the cursor
   isDrawing = true;
   lastX = pos.x;
   lastY = pos.y;
   if (currentTool === 'eraser') {
-    inkCtx.globalCompositeOperation = 'destination-out';
-    inkCtx.lineWidth = toolSizes.eraser;
-    inkCtx.beginPath();
-    inkCtx.arc(pos.x, pos.y, toolSizes.eraser / 2, 0, Math.PI * 2);
-    inkCtx.fill();
+    eraseAt(pos);
   } else {
-    inkCtx.globalCompositeOperation = 'source-over';
-    inkCtx.strokeStyle = colorPicker.value;
-    inkCtx.fillStyle = colorPicker.value;
-    inkCtx.lineWidth = toolSizes.pen;
-    inkCtx.beginPath();
-    inkCtx.arc(pos.x, pos.y, toolSizes.pen / 2, 0, Math.PI * 2);
-    inkCtx.fill();
+    activeStroke = {
+      id: newId(), type: 'stroke', pts: [[pos.x, pos.y]],
+      color: colorPicker.value, lineWidth: toolSizes.pen,
+    };
+    shapes.push(activeStroke);
   }
   render();
 }
@@ -1044,6 +1682,7 @@ function draw(e) {
   if (currentTool === 'select') { moveSelect(pos); return; }
 
   if (currentTool === 'lasso') {
+    if (lassoMoving) { moveSelect(pos); return; }
     const last = lassoPoints[lassoPoints.length - 1];
     if (!last || Math.hypot(pos.x - last.x, pos.y - last.y) > 2) lassoPoints.push(pos);
     render();
@@ -1051,59 +1690,36 @@ function draw(e) {
     return;
   }
 
-  if (currentTool === 'line') {
+  if (isShapeTool(currentTool)) {
     shapeEnd = pos;
     render();
-    ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.strokeStyle = colorPicker.value;
-    ctx.lineWidth = toolSizes.pen;
-    ctx.beginPath();
-    ctx.moveTo(lineStart.x, lineStart.y);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
-    ctx.restore();
-    return;
-  }
-
-  if (currentTool === 'circle') {
-    shapeEnd = pos;
-    render();
-    ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.strokeStyle = colorPicker.value;
-    ctx.lineWidth = toolSizes.pen;
-    const cx = (lineStart.x + pos.x) / 2;
-    const cy = (lineStart.y + pos.y) / 2;
-    const rx = Math.abs(pos.x - lineStart.x) / 2;
-    const ry = Math.abs(pos.y - lineStart.y) / 2;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-    return;
-  }
-
-  if (SHAPE_TOOLS.includes(currentTool)) {
-    shapeEnd = pos;
-    render();
+    const def = TOOL_DEFS[currentTool];
     const size = Number(brushSize.value);
-    if (currentTool === 'arrow') {
-      strokeArrow(ctx, lineStart.x, lineStart.y, pos.x, pos.y, colorPicker.value, size);
-      const target = boxAt(pos, SNAP_MARGIN);
-      if (target) highlightBox(target);
+    if (def.lineLike) {
+      if (def.type === 'line') {
+        strokeLine(ctx, lineStart.x, lineStart.y, pos.x, pos.y, colorPicker.value, size);
+      } else if (def.type === 'doublearrow') {
+        strokeDoubleArrow(ctx, lineStart.x, lineStart.y, pos.x, pos.y, colorPicker.value, size);
+      } else {
+        strokeArrow(ctx, lineStart.x, lineStart.y, pos.x, pos.y, colorPicker.value, size);
+      }
+      if (def.snap) {
+        const target = boxAt(pos, SNAP_MARGIN);
+        if (target) highlightBox(target);
+      }
     } else {
       const b = normBounds(lineStart.x, lineStart.y, pos.x, pos.y);
-      strokeBox(ctx, currentTool, b.x, b.y, b.w, b.h, colorPicker.value, size);
+      strokeBox(ctx, def.type, b.x, b.y, b.w, b.h, colorPicker.value, size);
     }
     return;
   }
 
   // pen / eraser
-  inkCtx.beginPath();
-  inkCtx.moveTo(lastX, lastY);
-  inkCtx.lineTo(pos.x, pos.y);
-  inkCtx.stroke();
+  if (currentTool === 'eraser') {
+    eraseAt(pos);
+  } else if (activeStroke) {
+    activeStroke.pts.push([pos.x, pos.y]);
+  }
   lastX = pos.x;
   lastY = pos.y;
   render();
@@ -1124,42 +1740,15 @@ function stopDraw() {
   isDrawing = false;
 
   if (currentTool === 'select') { endSelect(); return; }
-  if (currentTool === 'lasso') { commitLasso(); return; }
-  if (SHAPE_TOOLS.includes(currentTool)) { finishShape(); return; }
-
-  if (currentTool === 'line' || currentTool === 'circle') {
-    // Commit the preview onto the ink layer.
-    inkCtx.save();
-    inkCtx.globalCompositeOperation = 'source-over';
-    inkCtx.strokeStyle = colorPicker.value;
-    inkCtx.lineWidth = toolSizes.pen;
-    const end = shapeEnd || lineStart;
-    if (currentTool === 'line') {
-      inkCtx.beginPath();
-      inkCtx.moveTo(lineStart.x, lineStart.y);
-      inkCtx.lineTo(end.x, end.y);
-      inkCtx.stroke();
-    } else {
-      const cx = (lineStart.x + end.x) / 2;
-      const cy = (lineStart.y + end.y) / 2;
-      const rx = Math.abs(end.x - lineStart.x) / 2;
-      const ry = Math.abs(end.y - lineStart.y) / 2;
-      if (rx > 0.5 && ry > 0.5) {
-        inkCtx.beginPath();
-        inkCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-        inkCtx.stroke();
-      }
-    }
-    inkCtx.restore();
-    lineStart = null;
-    shapeEnd = null;
-    render();
-    saveUndoState();
-    syncCurrentPage();
+  if (currentTool === 'lasso') {
+    if (lassoMoving) { lassoMoving = false; endSelect(); return; }
+    commitLasso();
     return;
   }
+  if (isShapeTool(currentTool)) { finishShape(); return; }
 
-  // pen / eraser already committed to the ink layer
+  // pen (vector stroke) / eraser
+  activeStroke = null;
   saveUndoState();
   syncCurrentPage();
 }
@@ -1178,14 +1767,14 @@ canvas.addEventListener('mousemove', (e) => {
   const pos = getPosition(e);
   statusCoords.textContent = `${Math.round(pos.x)}, ${Math.round(pos.y)}`;
   updateEraserCursor(pos);
-  if (currentTool === 'select' && !isDrawing) updateSelectCursor(pos);
+  if (showsSelection() && !isDrawing) updateSelectCursor(pos);
 });
 canvas.addEventListener('mouseup', stopDraw);
 canvas.addEventListener('mouseout', (e) => { stopDraw(e); hideEraserCursor(); });
 canvas.addEventListener('dblclick', (e) => {
   const pos = getPosition(e);
   const box = boxAt(pos, 0);
-  if (box) { selectedId = box.id; openBoxEditor(box); }
+  if (box) { selectOnly(box.id); openBoxEditor(box); }
 });
 
 // ─── Touch events ───
@@ -1201,7 +1790,7 @@ canvas.addEventListener('touchend', (e) => { stopDraw(e); hideEraserCursor(); })
 function clearCanvas() {
   inkCtx.clearRect(0, 0, W, H);
   shapes.length = 0;
-  selectedId = null;
+  clearSelection();
   render();
   saveUndoState();
   syncCurrentPage();
@@ -1239,7 +1828,7 @@ document.addEventListener('keydown', (e) => {
   // Don't hijack typing in the box label editor.
   if (editing || e.target === shapeTextEditor) return;
 
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length) {
     e.preventDefault();
     deleteSelected();
     return;
@@ -1256,13 +1845,14 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'b') setTool('pen');
   if (e.key === 'e') setTool('eraser');
   if (e.key === 'l') setTool('lasso');
-  if (e.key === 'i') setTool('line');
-  if (e.key === 'o') setTool('circle');
   if (e.key === 'r') setTool('rect');
-  if (e.key === 'g') setTool('roundrect');
-  if (e.key === 'd') setTool('diamond');
+  if (e.key === 'o') setTool('circle');
+  if (e.key === 'i') setTool('line');
   if (e.key === 'a') setTool('arrow');
-  if (e.key === 't') toggleTheme();
+  if (e.key === 'p') setTool('process');
+  if (e.key === 'd') setTool('decision');
+  if (e.key === 'g') setTool('terminator');
+  if (e.key === 'c') setTool('connector');
 
   if (e.key === 'PageUp') { e.preventDefault(); if (currentPage > 0) switchPage(currentPage - 1); }
   if (e.key === 'PageDown') { e.preventDefault(); if (currentPage < pages.length - 1) switchPage(currentPage + 1); }
@@ -1291,5 +1881,11 @@ window.addEventListener('resize', () => {
 resizeCanvas();
 
 // ─── Initial render ───
+buildPalette();
+applyCanvasBg();
+setColor(tpl().ink);
+document.querySelectorAll('.template-item').forEach(el => {
+  el.classList.toggle('active', el.dataset.template === template);
+});
 setTool('pen');
 renderPageStrip();
