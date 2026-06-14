@@ -1228,6 +1228,7 @@ const PALETTE = [
   '#cc0000', '#e84040', '#ff7373', '#ff57a8', '#d90084', '#9c27b0',
   '#8b4513', '#ff7300', '#ff9900', '#ffc107', '#ffd600', '#d6d633',
   '#338033', '#4caf50', '#2ecc71', '#00bcbc', '#0078ff', '#1a4dcc',
+  '#5a9bff', '#163a8a',
 ];
 
 function buildPalette() {
