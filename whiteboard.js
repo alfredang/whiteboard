@@ -28,8 +28,14 @@ const processIcon = document.getElementById('processIcon');
 const swatchGrid = document.getElementById('swatchGrid');
 const colorSwatch = document.getElementById('colorSwatch');
 
+// Logical drawing size. Every coordinate in this file is in these units; the
+// backing store is scaled up for high-DPI screens so ink stays sharp.
 const W = canvas.width;
 const H = canvas.height;
+const PIXEL_SCALE = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+canvas.width = Math.round(W * PIXEL_SCALE);
+canvas.height = Math.round(H * PIXEL_SCALE);
+ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
 
 // ─── Tool definitions ───
 // Each shape/flowchart tool maps to a concrete geometry `type` plus behaviour
@@ -500,8 +506,10 @@ function strokeLine(c, x1, y1, x2, y2, color, lw) {
   c.restore();
 }
 
-// Render a freehand pen stroke (a polyline through its captured points).
-function strokeFreehand(c, pts, color, lw) {
+// Render a freehand pen stroke. Three or more points are drawn as a chain of
+// quadratic curves through the segment midpoints, which rounds off the corners
+// between samples; `sharp` strokes (recognised polygons) stay a plain polyline.
+function strokeFreehand(c, pts, color, lw, sharp) {
   if (!pts || pts.length === 0) return;
   c.save();
   c.globalCompositeOperation = 'source-over';
@@ -517,7 +525,15 @@ function strokeFreehand(c, pts, color, lw) {
   } else {
     c.beginPath();
     c.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+    if (sharp || pts.length < 3) {
+      for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+    } else {
+      for (let i = 1; i < pts.length - 1; i++) {
+        c.quadraticCurveTo(pts[i][0], pts[i][1],
+          (pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2);
+      }
+      c.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    }
     c.stroke();
   }
   c.restore();
@@ -598,7 +614,7 @@ function drawShape(c, s) {
     const [p1, p2] = arrowEnds(s);
     strokeLine(c, p1.x, p1.y, p2.x, p2.y, s.color, s.lineWidth);
   } else if (s.type === 'stroke') {
-    strokeFreehand(c, s.pts, s.color, s.lineWidth);
+    strokeFreehand(c, s.pts, s.color, s.lineWidth, s.sharp);
   } else {
     strokeBox(c, s.type, s.x, s.y, s.w, s.h, s.color, s.lineWidth);
     if (s !== editingBox && s.text) fillBoxText(c, s.type, s.x, s.y, s.w, s.h, s.text, s.color);
@@ -646,7 +662,7 @@ function render() {
   ctx.fillStyle = canvasBgColor();
   ctx.fillRect(0, 0, W, H);
   drawPaperPattern(ctx);
-  ctx.drawImage(inkCanvas, 0, 0);
+  ctx.drawImage(inkCanvas, 0, 0, W, H);
   for (const s of shapes) drawShape(ctx, s);
   if (showsSelection() && selectedIds.length) drawSelection();
 }
@@ -1297,6 +1313,22 @@ function applyColor(hex) {
   if (currentTool === 'eraser') setTool('pen');
 }
 
+// Quick marker colours cycled by Ctrl/Cmd+A. The first entry is the surface's
+// default ink, so it is black on a whiteboard and chalk-white on a blackboard.
+const QUICK_COLORS = [
+  [null, 'Default'], ['#cc0000', 'Red'], ['#0078ff', 'Blue'],
+  ['#338033', 'Green'], ['#ff7300', 'Orange'], ['#9c27b0', 'Purple'],
+];
+function cyclePenColor(dir) {
+  const list = QUICK_COLORS.map(([hex, name]) => [hex || tpl().ink, name]);
+  const cur = colorPicker.value.toLowerCase();
+  const i = list.findIndex(([hex]) => hex.toLowerCase() === cur);
+  // From a colour outside the list, start at the first (forward) or last (back).
+  const next = i === -1 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length;
+  applyColor(list[next][0]);
+  showToast(`Pen colour: ${list[next][1]}`);
+}
+
 // ─── Brush Size ───
 brushSize.addEventListener('input', () => {
   const val = parseInt(brushSize.value, 10);
@@ -1640,7 +1672,7 @@ function eraseStrokesAt(pos, radius) {
     } else {
       changed = true;
       for (const r of runs) {
-        if (r.length >= 2) next.push({ id: newId(), type: 'stroke', pts: r, color: s.color, lineWidth: s.lineWidth });
+        if (r.length >= 2) next.push({ id: newId(), type: 'stroke', pts: r, color: s.color, lineWidth: s.lineWidth, ...(s.sharp ? { sharp: true } : {}) });
       }
     }
   }
@@ -1664,6 +1696,268 @@ function eraseAt(pos) {
   inkCtx.restore();
   // Vector strokes: split/remove points within the eraser radius.
   eraseStrokesAt(pos, toolSizes.eraser / 2);
+}
+
+// ─── Pen engine: stabiliser, Shift-straight, hold-to-straighten ───
+// The ink does not follow the cursor directly. It follows a "brush" point that
+// the cursor drags along on a short string: movements smaller than the string
+// length (hand tremor, mouse jitter) do not move the brush at all.
+const SMOOTH_LEVELS = { off: 0, low: 3, medium: 6, high: 12 }; // string length, canvas px
+const SMOOTH_KEY = 'whiteboard.smoothing';
+const smoothSelect = document.getElementById('smoothLevel');
+let smoothing = 'medium';
+try {
+  const saved = localStorage.getItem(SMOOTH_KEY);
+  if (saved && saved in SMOOTH_LEVELS) smoothing = saved;
+} catch { /* storage unavailable */ }
+smoothSelect.value = smoothing;
+smoothSelect.addEventListener('change', () => {
+  smoothing = smoothSelect.value;
+  try { localStorage.setItem(SMOOTH_KEY, smoothing); } catch { /* ignore */ }
+  smoothSelect.blur(); // give the keyboard back to the tool shortcuts
+});
+
+const PEN_MIN_DIST = 1.5;  // drop samples closer than this to the previous point
+const HOLD_MS = 550;       // hold still this long to tidy the stroke into a shape
+const HOLD_SLOP = 4;       // movement (canvas px) that still counts as holding still
+
+let brush = null;        // stabilised pen position
+let penPointer = null;   // latest raw pointer position
+let penStraight = false; // Shift held: the stroke is a straight segment
+let holdAnchor = null;
+let holdTimer = null;
+
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+// Snap the direction start→pos to the nearest 45° step. With `tolDeg` the snap
+// only applies when the direction is already within that tolerance.
+function snapAngle(start, pos, tolDeg) {
+  const len = dist(start, pos);
+  if (len === 0) return pos;
+  const ang = Math.atan2(pos.y - start.y, pos.x - start.x);
+  const step = Math.PI / 4;
+  const near = Math.round(ang / step) * step;
+  if (tolDeg !== undefined && Math.abs(ang - near) > (tolDeg * Math.PI) / 180) return pos;
+  return { x: start.x + len * Math.cos(near), y: start.y + len * Math.sin(near) };
+}
+
+// Shift while dragging a shape tool: lines lock to 45° steps, boxes become square.
+function constrainEnd(start, pos, def) {
+  if (def.lineLike) return snapAngle(start, pos);
+  const side = Math.max(Math.abs(pos.x - start.x), Math.abs(pos.y - start.y));
+  return {
+    x: start.x + (pos.x < start.x ? -side : side),
+    y: start.y + (pos.y < start.y ? -side : side),
+  };
+}
+
+function penAddPoint(x, y) {
+  const pts = activeStroke.pts;
+  const last = pts[pts.length - 1];
+  if (Math.hypot(x - last[0], y - last[1]) >= PEN_MIN_DIST) pts.push([x, y]);
+}
+
+function armHold(pos) {
+  holdAnchor = pos;
+  clearTimeout(holdTimer);
+  holdTimer = setTimeout(snapHeldStroke, HOLD_MS);
+}
+
+function penStart(pos) {
+  activeStroke = {
+    id: newId(), type: 'stroke', pts: [[pos.x, pos.y]],
+    color: colorPicker.value, lineWidth: toolSizes.pen,
+  };
+  shapes.push(activeStroke);
+  brush = { x: pos.x, y: pos.y };
+  penPointer = pos;
+  penStraight = false;
+  armHold(pos);
+}
+
+function penMove(pos, shift) {
+  if (!activeStroke) return;
+  penPointer = pos;
+  if (!holdAnchor || dist(pos, holdAnchor) > HOLD_SLOP) armHold(pos);
+
+  if (shift) {
+    // Straight segment from where the stroke began, easing onto 45° steps.
+    const p0 = activeStroke.pts[0];
+    const end = snapAngle({ x: p0[0], y: p0[1] }, pos, 6);
+    activeStroke.pts = [p0, [end.x, end.y]];
+    penStraight = true;
+    brush = { x: end.x, y: end.y };
+    return;
+  }
+  penStraight = false;
+
+  const r = SMOOTH_LEVELS[smoothing];
+  const d = dist(pos, brush);
+  if (d <= r) return;
+  const k = (d - r) / d;
+  brush.x += (pos.x - brush.x) * k;
+  brush.y += (pos.y - brush.y) * k;
+  penAddPoint(brush.x, brush.y);
+}
+
+function penEnd() {
+  clearTimeout(holdTimer);
+  // The brush trails the cursor by the string length — close that gap.
+  if (activeStroke && !penStraight && penPointer && activeStroke.pts.length > 1) {
+    penAddPoint(penPointer.x, penPointer.y);
+  }
+  activeStroke = null;
+  brush = null;
+  penPointer = null;
+  holdAnchor = null;
+}
+
+// Resample a point list to roughly even spacing so slow and fast parts of a
+// stroke weigh the same in the shape tests below.
+function resamplePts(pts, spacing) {
+  const out = [pts[0]];
+  let carry = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const [x1, y1] = pts[i - 1], [x2, y2] = pts[i];
+    const seg = Math.hypot(x2 - x1, y2 - y1);
+    if (seg === 0) continue;
+    let t = spacing - carry;
+    while (t <= seg) {
+      out.push([x1 + ((x2 - x1) * t) / seg, y1 + ((y2 - y1) * t) / seg]);
+      t += spacing;
+    }
+    carry = seg - (t - spacing);
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+// Ramer–Douglas–Peucker: keep only the points that deviate more than eps.
+function rdp(pts, eps) {
+  if (pts.length < 3) return pts.slice();
+  const a = pts[0], b = pts[pts.length - 1];
+  let worst = 0, idx = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = pointToSegment(pts[i][0], pts[i][1], a[0], a[1], b[0], b[1]);
+    if (d > worst) { worst = d; idx = i; }
+  }
+  if (worst <= eps) return [a, b];
+  return rdp(pts.slice(0, idx + 1), eps).slice(0, -1).concat(rdp(pts.slice(idx), eps));
+}
+
+// Corner points of a closed loop: simplify, merge the overlapping start/end,
+// then drop any vertex that sits on a nearly straight run.
+function loopCorners(pts, diag) {
+  let v = rdp(pts, diag * 0.07);
+  if (v.length > 2 && Math.hypot(v[0][0] - v[v.length - 1][0], v[0][1] - v[v.length - 1][1]) < diag * 0.25) v.pop();
+  let changed = true;
+  while (changed && v.length > 3) {
+    changed = false;
+    for (let i = 0; i < v.length; i++) {
+      const p = v[(i + v.length - 1) % v.length], q = v[i], n = v[(i + 1) % v.length];
+      const a1 = Math.atan2(p[1] - q[1], p[0] - q[0]);
+      const a2 = Math.atan2(n[1] - q[1], n[0] - q[0]);
+      let ang = Math.abs(a1 - a2);
+      if (ang > Math.PI) ang = Math.PI * 2 - ang;
+      if (ang > (150 * Math.PI) / 180) { v.splice(i, 1); changed = true; break; }
+    }
+  }
+  return v;
+}
+
+// Decide what clean shape (if any) a freehand stroke was meant to be.
+// Returns { kind: 'line' | 'ellipse' | 'rect' | 'polygon', ... } or null.
+function recognizeStroke(rawPts) {
+  if (rawPts.length < 2) return null;
+  const pts = resamplePts(rawPts, 4);
+  let len = 0;
+  for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  if (len < 50) return null;
+
+  const first = pts[0], last = pts[pts.length - 1];
+  const gap = Math.hypot(last[0] - first[0], last[1] - first[1]);
+
+  // Open stroke → a straight line, if it never strays far from its chord.
+  if (gap > len * 0.25) {
+    let dev = 0;
+    for (const p of pts) dev = Math.max(dev, pointToSegment(p[0], p[1], first[0], first[1], last[0], last[1]));
+    if (dev > Math.max(6, gap * 0.1) || len > gap * 1.3) return null;
+    const end = snapAngle({ x: first[0], y: first[1] }, { x: last[0], y: last[1] }, 4);
+    return { kind: 'line', x1: first[0], y1: first[1], x2: end.x, y2: end.y };
+  }
+
+  // Closed loop → ellipse, rectangle or polygon.
+  const b = strokeBounds({ pts });
+  if (b.w < 16 || b.h < 16) return null;
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  let err = 0;
+  for (const p of pts) err += Math.abs(Math.hypot((p[0] - cx) / (b.w / 2), (p[1] - cy) / (b.h / 2)) - 1);
+  err /= pts.length;
+
+  const ellipse = () => {
+    // Nearly round → a true circle.
+    if (Math.abs(b.w - b.h) / Math.max(b.w, b.h) < 0.15) {
+      const d = (b.w + b.h) / 2;
+      return { kind: 'ellipse', x: cx - d / 2, y: cy - d / 2, w: d, h: d };
+    }
+    return { kind: 'ellipse', x: b.x, y: b.y, w: b.w, h: b.h };
+  };
+  if (err < 0.09) return ellipse();
+
+  const corners = loopCorners(pts, Math.hypot(b.w, b.h));
+  if (corners.length === 4) {
+    // Axis-aligned if each corner sits near its own corner of the bounding box.
+    const tol = Math.min(b.w, b.h) * 0.25;
+    const used = new Set();
+    for (const [x, y] of corners) {
+      const k = boxCorners(b).findIndex(([bx, by]) => Math.hypot(x - bx, y - by) <= tol);
+      if (k !== -1) used.add(k);
+    }
+    if (used.size === 4) return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h };
+  }
+  if (corners.length === 3 || corners.length === 4) {
+    return { kind: 'polygon', pts: corners.concat([corners[0]]).map(p => p.slice()) };
+  }
+  return err < 0.2 ? ellipse() : null;
+}
+
+// Fired when the pen is held still mid-stroke: swap the wobbly stroke for the
+// clean shape it resembles. The rest of the drag is ignored until release.
+function snapHeldStroke() {
+  if (!activeStroke || !isDrawing || currentTool !== 'pen' || penStraight) return;
+  const pts = activeStroke.pts.slice();
+  if (penPointer) pts.push([penPointer.x, penPointer.y]);
+  const hit = recognizeStroke(pts);
+  if (!hit) return;
+
+  const base = { id: activeStroke.id, color: activeStroke.color, lineWidth: activeStroke.lineWidth };
+  let shape, label;
+  if (hit.kind === 'line') {
+    shape = { ...base, type: 'line', x1: hit.x1, y1: hit.y1, x2: hit.x2, y2: hit.y2, from: null, to: null };
+    label = 'line';
+  } else if (hit.kind === 'ellipse') {
+    shape = { ...base, type: 'circle', x: hit.x, y: hit.y, w: hit.w, h: hit.h, text: '' };
+    label = hit.w === hit.h ? 'circle' : 'oval';
+  } else if (hit.kind === 'rect') {
+    shape = { ...base, type: 'rect', x: hit.x, y: hit.y, w: hit.w, h: hit.h, text: '' };
+    label = 'rectangle';
+  } else {
+    shape = { ...base, type: 'stroke', pts: hit.pts, sharp: true };
+    label = hit.pts.length === 4 ? 'triangle' : 'quadrilateral';
+  }
+  const i = shapes.indexOf(activeStroke);
+  if (i !== -1) shapes.splice(i, 1, shape);
+  activeStroke = null;
+  render();
+  showToast(`Tidied to ${label}`);
+}
+
+// Coalesce pen/eraser redraws to one per animation frame.
+let renderQueued = false;
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
 }
 
 // ─── Drawing dispatch ───
@@ -1706,18 +2000,14 @@ function startDraw(e) {
   if (currentTool === 'eraser') {
     eraseAt(pos);
   } else {
-    activeStroke = {
-      id: newId(), type: 'stroke', pts: [[pos.x, pos.y]],
-      color: colorPicker.value, lineWidth: toolSizes.pen,
-    };
-    shapes.push(activeStroke);
+    penStart(pos);
   }
   render();
 }
 
 function draw(e) {
   if (!isDrawing) return;
-  const pos = getPosition(e);
+  let pos = getPosition(e);
 
   if (currentTool === 'select') { moveSelect(pos); return; }
 
@@ -1731,9 +2021,10 @@ function draw(e) {
   }
 
   if (isShapeTool(currentTool)) {
+    const def = TOOL_DEFS[currentTool];
+    if (e.shiftKey) pos = constrainEnd(lineStart, pos, def);
     shapeEnd = pos;
     render();
-    const def = TOOL_DEFS[currentTool];
     const size = Number(brushSize.value);
     if (def.lineLike) {
       if (def.type === 'line') {
@@ -1757,12 +2048,15 @@ function draw(e) {
   // pen / eraser
   if (currentTool === 'eraser') {
     eraseAt(pos);
-  } else if (activeStroke) {
-    activeStroke.pts.push([pos.x, pos.y]);
+  } else {
+    // Use every sample the browser batched into this frame, not just the last.
+    const batch = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    if (batch.length) for (const ce of batch) penMove(getPosition(ce), e.shiftKey);
+    else penMove(pos, e.shiftKey);
   }
   lastX = pos.x;
   lastY = pos.y;
-  render();
+  scheduleRender();
 }
 
 function highlightBox(box) {
@@ -1788,7 +2082,8 @@ function stopDraw() {
   if (isShapeTool(currentTool)) { finishShape(); return; }
 
   // pen (vector stroke) / eraser
-  activeStroke = null;
+  penEnd();
+  render();
   saveUndoState();
   syncCurrentPage();
 }
@@ -1800,31 +2095,44 @@ function syncCurrentPage() {
   persistState();
 }
 
-// ─── Mouse events ───
-canvas.addEventListener('mousedown', startDraw);
-canvas.addEventListener('mousemove', (e) => {
+// ─── Pointer events (mouse, touch and stylus) ───
+// The pointer is captured for the length of a drag, so a stroke carries on
+// when the cursor slips off the canvas instead of being cut short.
+let activePointer = null;
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (activePointer !== null) return;                    // ignore extra fingers
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  activePointer = e.pointerId;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
+  startDraw(e);
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (activePointer !== null && e.pointerId !== activePointer) return;
   draw(e);
   const pos = getPosition(e);
   statusCoords.textContent = `${Math.round(pos.x)}, ${Math.round(pos.y)}`;
   updateEraserCursor(pos);
   if (showsSelection() && !isDrawing) updateSelectCursor(pos);
 });
-canvas.addEventListener('mouseup', stopDraw);
-canvas.addEventListener('mouseout', (e) => { stopDraw(e); hideEraserCursor(); });
+
+function endPointer(e) {
+  if (e.pointerId !== activePointer) return;
+  activePointer = null;
+  stopDraw();
+  if (e.pointerType !== 'mouse') hideEraserCursor();
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('lostpointercapture', endPointer);
+canvas.addEventListener('pointerleave', () => { if (!isDrawing) hideEraserCursor(); });
+
 canvas.addEventListener('dblclick', (e) => {
   const pos = getPosition(e);
   const box = boxAt(pos, 0);
   if (box) { selectOnly(box.id); openBoxEditor(box); }
 });
-
-// ─── Touch events ───
-canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDraw(e); });
-canvas.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  draw(e);
-  updateEraserCursor(getPosition(e));
-});
-canvas.addEventListener('touchend', (e) => { stopDraw(e); hideEraserCursor(); });
 
 // ─── Actions ───
 function clearCanvas() {
@@ -1875,6 +2183,8 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (e.ctrlKey || e.metaKey) {
+    // Ctrl/Cmd+A: next pen colour (Shift reverses). Overrides the browser's Select All.
+    if (e.key.toLowerCase() === 'a') { e.preventDefault(); cyclePenColor(e.shiftKey ? -1 : 1); return; }
     // Page navigation: Ctrl+Left/Right
     if (e.key === 'ArrowLeft') { e.preventDefault(); if (currentPage > 0) switchPage(currentPage - 1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); if (currentPage < pages.length - 1) switchPage(currentPage + 1); }

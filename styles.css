@@ -578,6 +578,23 @@ header {
   min-width: 32px;
 }
 
+.smooth-select {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.smooth-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* Action buttons */
 .actions {
   display: flex;
@@ -804,6 +821,8 @@ canvas {
   cursor: crosshair;
   max-width: 100%;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
   position: relative;
   z-index: 1;
   transition: box-shadow 0.4s ease;

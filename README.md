@@ -6,7 +6,7 @@
 [![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=flat&logo=css3&logoColor=white)](https://developer.mozilla.org/en-US/docs/Web/CSS)
 [![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
 [![jsPDF](https://img.shields.io/badge/jsPDF-3.0-orange)](https://github.com/parallax/jsPDF)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 [![GitHub Pages](https://img.shields.io/badge/Deploy-GitHub%20Pages-222?logo=github)](https://alfredang.github.io/whiteboard/)
 
 **A minimal, browser-based whiteboard with freehand drawing and flowchart tools, in a dark creative-studio aesthetic. Built for educators and trainers.**
@@ -27,20 +27,24 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 
 | Feature | Description |
 |---------|-------------|
-| **Freehand pen** | Smooth pressure-friendly drawing with a pencil cursor (`B`) |
-| **Flowchart shapes** | Process box (`R`), rounded terminator (`G`), and decision diamond (`D`) — drag to size, then type a centered, auto-wrapped label |
-| **Connector arrows** | Draw directional arrows to link shapes (`A`) |
-| **Line & circle** | Straight lines (`I`) and ellipses (`O`) with live preview |
+| **Freehand pen** | Stabilised, curve-smoothed strokes that steady a shaky mouse (`B`), with an Off / Low / Medium / High smoothing control |
+| **Hold to tidy** | Pause at the end of a pen stroke and it snaps to a clean line, circle, oval, rectangle or triangle |
+| **Shift to constrain** | Hold `Shift` for a straight pen stroke, 45° lines and arrows, and perfect squares and circles |
+| **Colour hotkey** | `Ctrl/Cmd + A` cycles the pen through six marker colours (`Shift` reverses) |
+| **Shapes** | Rectangle (`R`), circle / oval (`O`), triangle, diamond, pentagon, hexagon, star and more, plus line (`I`), arrow (`A`) and double arrow, all with live preview |
+| **Flowchart tools** | Process (`P`), decision (`D`), start / end (`G`), data, document, database and other nodes: drag to size, then type a centred, auto-wrapped label |
+| **Snapping connectors** | Connector arrows (`C`) attach to boxes and follow them when they move |
+| **Select & move** | Click to select (`V`), drag to move, resize boxes by their corners, double-click a box to edit its label, `Delete` to remove |
+| **Lasso select** | Circle several elements to select and move them together (`L`) |
 | **Eraser with size ring** | A circle cursor shows the exact eraser size as you erase (`E`) |
-| **Lasso delete** | Encircle any region to wipe it in one stroke (`L`) |
-| **Light / dark canvas** | Toggle between whiteboard and chalkboard modes (`T`) — existing work is inverted to match |
+| **Paper styles** | Whiteboard, paper or blackboard surface, each with a blank, lined, dotted or grid pattern; ink is recoloured when switching between light and dark |
 | **Multi-page support** | Add, delete, navigate, and reset pages with live thumbnail previews |
-| **Color picker** | Full color selection with visual swatch indicator |
+| **Colour palette** | 26 swatches plus a custom colour picker; applies to the pen and to selected shapes |
 | **Adjustable size** | Per-tool size slider (pen 1–50px, eraser 5–120px) |
 | **Undo** | Per-page undo history (Ctrl/Cmd+Z, up to 30 states) |
 | **PDF export** | All pages exported as a single landscape PDF document |
 | **Auto-save** | Pages persist to `localStorage` across refreshes |
-| **Touch support** | Full touch input for tablets and mobile devices |
+| **Mouse, touch and stylus** | Pointer events throughout, so strokes continue when the cursor leaves the canvas, and the canvas renders sharply on high-DPI screens |
 | **Responsive layout** | Adapts to any screen size with smooth animations |
 
 ## Tech Stack
@@ -70,7 +74,7 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 │  │        HTML5 Canvas (1200×700)            │          │
 │  │  ├── Freehand / Line / Circle             │          │
 │  │  ├── Flowchart shapes + text labels       │          │
-│  │  ├── Eraser (+ size ring) / Lasso delete  │          │
+│  │  ├── Eraser (+ size ring) / Lasso select  │          │
 │  │  ├── Snapshot preview + Undo stack (×30)  │          │
 │  │  └── Per-page state                       │          │
 │  └───────┬───────────────────────┬───────────┘          │
@@ -89,7 +93,8 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 whiteboard/
 ├── index.html          # Toolbar, canvas, page strip, status bar, text editor overlay
 ├── styles.css          # Dark/light themes, responsive layout, animations, cursors
-├── whiteboard.js       # Drawing engine, shapes & labels, pages, undo, PDF export
+├── whiteboard.js       # Pen engine (smoothing, shape tidy), shapes & labels, pages, undo, PDF export
+├── .github/workflows/deploy.yml   # GitHub Pages deployment
 ├── preview.png         # Screenshot for README
 └── README.md
 ```
@@ -127,32 +132,38 @@ Or use the live version: **[https://alfredang.github.io/whiteboard/](https://alf
 
 | Shortcut | Action |
 |----------|--------|
+| `V` | Select / move |
 | `B` | Pen |
 | `E` | Eraser |
-| `L` | Lasso delete |
+| `L` | Lasso select |
+| `R` | Rectangle |
+| `O` | Circle / oval |
 | `I` | Line |
-| `O` | Circle |
-| `R` | Process box |
-| `G` | Rounded box |
+| `A` | Arrow |
+| `P` | Process box |
 | `D` | Decision diamond |
-| `A` | Connector arrow |
-| `T` | Toggle light / dark canvas |
+| `G` | Start / end |
+| `C` | Connector (snaps to boxes) |
+| `Delete` / `Backspace` | Delete the selection |
 | `Ctrl/Cmd + Z` | Undo |
+| `Ctrl/Cmd + A` | Next pen colour (`Shift` for previous) |
+| `Shift` + drag | Straight pen stroke, 45° lines, squares and circles |
+| Hold still while drawing | Tidy the stroke into a line or shape |
 | `PgUp` / `Ctrl + ←` | Previous page |
 | `PgDn` / `Ctrl + →` | Next page |
 
-> **Tip:** After drawing a box, rounded box, or diamond, a text field appears inside it — type your label and press `Enter` (`Shift+Enter` for a new line, `Esc` to leave it blank).
+> **Tip:** After drawing a flowchart node, a text field appears inside it — type your label and press `Enter` (`Shift+Enter` for a new line, `Esc` to leave it blank).
 
 ## Deployment
 
-This project is deployed to **GitHub Pages** directly from the `main` branch. No build step is needed — the site is served as static HTML.
+This project is deployed to **GitHub Pages** by the GitHub Actions workflow in `.github/workflows/deploy.yml`, which runs on every push to `main`. No build step is needed — the site is served as static HTML.
 
 To deploy your own fork:
 
 1. Fork this repository
 2. Go to **Settings > Pages**
-3. Set source to `Deploy from a branch` → `main` → `/ (root)`
-4. Your site will be live at `https://<your-username>.github.io/whiteboard/`
+3. Set source to **GitHub Actions**
+4. Push to `main`; your site will be live at `https://<your-username>.github.io/whiteboard/`
 
 ## Contributing
 

@@ -28,7 +28,7 @@
             <path d="M3 3l7.5 18 2.6-7.9L21 10.5 3 3z"/>
           </svg>
         </button>
-        <button class="tool-btn active" id="btnPen" title="Pen (B)">
+        <button class="tool-btn active" id="btnPen" title="Pen (B) — hold still at the end of a stroke to tidy it into a line or shape; Shift draws straight">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
             <path d="m15 5 4 4"/>
@@ -173,7 +173,7 @@
       <!-- Color palette dropdown -->
       <div class="toolbar-group">
         <div class="dropdown" id="ddColor">
-          <button class="tool-btn dropdown-trigger color-trigger" id="btnColor" title="Color">
+          <button class="tool-btn dropdown-trigger color-trigger" id="btnColor" title="Color — Ctrl/Cmd+A cycles pen colours">
             <span class="color-swatch" id="colorSwatch" style="background: #111111"></span>
             <span class="caret"></span>
           </button>
@@ -196,6 +196,19 @@
         <span class="size-label" id="sizeLabel">Pen</span>
         <input type="range" id="brushSize" min="1" max="50" value="4" title="Size">
         <span class="size-value" id="sizeValue">4px</span>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <!-- Pen smoothing (stroke stabiliser) -->
+      <div class="size-control">
+        <span class="size-label">Smooth</span>
+        <select id="smoothLevel" class="smooth-select" title="Pen smoothing — steadies shaky mouse strokes">
+          <option value="off">Off</option>
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
       </div>
 
       <div class="toolbar-divider"></div>
