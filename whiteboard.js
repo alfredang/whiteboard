@@ -934,6 +934,10 @@ function addPage() {
 
 function deletePage(index) {
   if (pages.length <= 1) { showToast('Need at least one page'); return; }
+  // A page with something on it is not thrown away on a stray tap.
+  if (index === currentPage) commitCurrentPage();
+  const doomed = pages[index];
+  if ((doomed.shapes.length || doomed.hasInk) && !confirm(`Delete page ${index + 1} and everything on it?`)) return;
   pages.splice(index, 1);
   if (currentPage >= pages.length) currentPage = pages.length - 1;
   else if (currentPage > index) currentPage--;

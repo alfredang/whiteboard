@@ -777,9 +777,31 @@ header {
   transition: opacity var(--transition), transform var(--transition);
 }
 
-.page-thumb:hover .page-thumb-delete {
-  opacity: 1;
-  transform: scale(1);
+/* With a mouse the delete button appears on hover. On a touch screen there is
+   no hover: revealing it on tap makes iPad Safari swallow the tap, so the
+   page never gets selected. There it shows on the selected page only. */
+@media (hover: hover) {
+  .page-thumb:hover .page-thumb-delete {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (hover: none) {
+  .page-thumb-delete {
+    pointer-events: none;
+    width: 26px;
+    height: 26px;
+    top: -9px;
+    right: -9px;
+    font-size: 14px;
+  }
+
+  .page-thumb.active .page-thumb-delete {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+  }
 }
 
 .page-thumb-delete:hover {

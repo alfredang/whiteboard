@@ -41,6 +41,9 @@
   let spSynced = '';
   let curSynced = '';
   let pendingCur = null;  // a page switch from another device, waiting for a quiet moment
+  let pendingSince = 0;
+  let shownId = null;     // the page this device was on when Live last looked
+  const PENDING_MAX_MS = 4000;
   let lastCurId = null;
   let flushQueued = false;
   let liveSentN = 0;      // points of the in-progress stroke already sent
@@ -158,7 +161,10 @@
     const sp = surface + '|' + pattern;
     if (sp !== spSynced) { up.sp = sp; spSynced = sp; }
 
+    // Someone on this device has just changed page: that always wins over a
+    // switch from another device that is still waiting to be shown.
     const cur = pages[currentPage].id;
+    if (cur !== shownId) { shownId = cur; pendingCur = null; }
     if (pendingCur === null && cur !== curSynced) { up.cur = cur; curSynced = cur; }
 
     pages.forEach((page, i) => {
@@ -184,7 +190,11 @@
   // up page switches that arrived mid-stroke.
   function tick() {
     if (!room || !room.ready) return;
-    if (pendingCur !== null) followCur();
+    if (pendingCur !== null) {
+      followCur();
+      // A switch to a page that never turns up (it was deleted again) is dropped.
+      if (pendingCur !== null && !isDrawing && !editing && Date.now() - pendingSince > PENDING_MAX_MS) pendingCur = null;
+    }
     if (!isDrawing || !activeStroke || currentTool !== 'pen') { liveSentFor = null; return; }
     const n = activeStroke.pts.length;
     if (liveSentFor === activeStroke && liveSentN === n) return;
@@ -380,6 +390,7 @@
       currentPage = Math.min(currentPage, pages.length - 1);
       loadPage(currentPage);
     }
+    shownId = pages[currentPage].id;
     ids.forEach(subPage);
     renderPageStrip();
     if (pendingCur !== null) followCur();
@@ -389,6 +400,7 @@
     if (!room || !val || val === curSynced) return;
     curSynced = val;
     pendingCur = val;
+    pendingSince = Date.now();
     followCur();
   }
 
@@ -398,6 +410,7 @@
     const i = pages.findIndex(p => p.id === pendingCur);
     if (i === -1) return; // the page itself has not arrived yet
     pendingCur = null;
+    shownId = pages[i].id;
     if (i === currentPage) return;
     commitCurrentPage();
     currentPage = i;
@@ -582,7 +595,7 @@
       orderSynced = head.order;
       pages = head.order.split(',').filter(Boolean).map(blankPage);
       currentPage = Math.max(0, pages.findIndex(p => p.id === head.cur));
-      curSynced = pages[currentPage].id;
+      curSynced = head.cur || pages[currentPage].id;
       spSynced = '';
       loadPage(currentPage);
       renderPageStrip();
@@ -602,6 +615,7 @@
     const ref = fb.ref(db, `rooms/${code}`);
     room = { code, host, ref, subs: new Map(), unsubs: [], ready: true };
     lastCurId = pages[currentPage].id;
+    shownId = lastCurId;
     pendingCur = null;
     const onErr = (err) => onListenError(err);
     pages.forEach(p => subPage(p.id));
