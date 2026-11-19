@@ -37,6 +37,8 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 | **Select & move** | Click to select (`V`), drag to move, resize boxes by their corners, double-click a box to edit its label, `Delete` to remove |
 | **Lasso select** | Circle several elements to select and move them together (`L`) |
 | **Eraser with size ring** | A circle cursor shows the exact eraser size as you erase (`E`) |
+| **Live session** | Start a session on the classroom PC, scan the QR code with an iPad (or enter the 6-character code) and both devices share one board in real time. Draw on the iPad and it appears on the projector |
+| **Apple Pencil / stylus** | Pressure-sensitive line width, palm rejection (fingers are ignored once a stylus is used; the hand button turns finger drawing back on) and a light stabiliser tuned for a stylus |
 | **Paper styles** | Whiteboard, paper or blackboard surface, each with a blank, lined, dotted or grid pattern; ink is recoloured when switching between light and dark |
 | **Multi-page support** | Add, delete, navigate, and reset pages with live thumbnail previews |
 | **Colour palette** | 26 swatches plus a custom colour picker; applies to the pen and to selected shapes |
@@ -94,6 +96,8 @@ whiteboard/
 ├── index.html          # Toolbar, canvas, page strip, status bar, text editor overlay
 ├── styles.css          # Dark/light themes, responsive layout, animations, cursors
 ├── whiteboard.js       # Pen engine (smoothing, shape tidy), shapes & labels, pages, undo, PDF export
+├── live.js             # Live sessions: Firebase sync, room code + QR join, shared undo
+├── database.rules.json # Realtime Database access rules (deploy with the Firebase CLI)
 ├── .github/workflows/deploy.yml   # GitHub Pages deployment
 ├── preview.png         # Screenshot for README
 └── README.md
@@ -153,6 +157,19 @@ Or use the live version: **[https://alfredang.github.io/whiteboard/](https://alf
 | `PgDn` / `Ctrl + →` | Next page |
 
 > **Tip:** After drawing a flowchart node, a text field appears inside it — type your label and press `Enter` (`Shift+Enter` for a new line, `Esc` to leave it blank).
+
+## Live sessions (Firebase)
+
+Live sessions use Firebase Realtime Database in project `edtools-whiteboard-asia` (region `asia-southeast1`, Singapore). The web config is in `live.js`; it is not a secret. Access is controlled by `database.rules.json`:
+
+- a room is readable and writable only by someone who knows its 6-character code;
+- rooms cannot be listed;
+- a room locks 48 hours after it was created;
+- the host's **End session** deletes the room.
+
+Deploy rule changes with `firebase deploy --only database`. The Firebase SDK and the QR library load only when a session starts or is joined, so the board still works offline as before.
+
+A device that joins shows the host's board and leaves its own saved board untouched. Undo is shared: Ctrl+Z on the PC takes back the last stroke drawn on the iPad. Every device follows the page the last person switched to.
 
 ## Deployment
 

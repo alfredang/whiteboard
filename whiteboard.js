@@ -154,10 +154,15 @@ let activeStroke = null;
 // Shapes for the current page (reference into pages[currentPage].shapes)
 let shapes = [];
 let shapeSeq = 1;
-function newId() { return 's' + (shapeSeq++); }
+// Ids carry a random per-load tag so two devices sharing a live board never
+// mint the same id.
+const CLIENT_TAG = Array.from({ length: 4 }, () => 'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]).join('');
+function newId() { return 's' + (shapeSeq++) + CLIENT_TAG; }
+function newPageId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function bumpSeq(arr) {
   for (const s of arr) {
-    const n = parseInt(String(s.id).replace(/\D/g, ''), 10);
+    const m = /^s(\d+)/.exec(String(s.id));
+    const n = m ? parseInt(m[1], 10) : NaN;
     if (!isNaN(n) && n >= shapeSeq) shapeSeq = n + 1;
   }
 }
@@ -242,8 +247,32 @@ function transparentInk() {
   return tmp.toDataURL();
 }
 
+// Pages saved by older versions hold freehand ink as a bitmap (`page.ink`);
+// today's pen draws vector strokes and the bitmap stays blank. `hasInk` marks
+// the pages that really have bitmap ink, and `inkDirty` that it has changed,
+// so a live session only ever sends the bitmap for those.
+function touchInk(page) { if (page.hasInk) page.inkDirty = true; }
+function detectInk(page) {
+  const img = new Image();
+  img.onload = () => {
+    const tmp = document.createElement('canvas');
+    tmp.width = 300; tmp.height = 175;
+    const t = tmp.getContext('2d');
+    t.drawImage(img, 0, 0, 300, 175);
+    const d = t.getImageData(0, 0, 300, 175).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 8) { page.hasInk = true; return; }
+  };
+  img.src = page.ink;
+}
+
 let saveTimer;
 function persistState() {
+  // A live session mirrors every committed change to the shared board. A guest
+  // device shows the host's board, so it leaves its own saved board alone.
+  if (window.Live) {
+    Live.localChanged();
+    if (Live.isGuest()) return;
+  }
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
@@ -251,7 +280,7 @@ function persistState() {
         surface,
         pattern,
         currentPage,
-        pages: pages.map(p => ({ ink: p.ink, shapes: p.shapes })),
+        pages: pages.map(p => ({ id: p.id, ink: p.ink, shapes: p.shapes })),
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (err) {
@@ -509,8 +538,57 @@ function strokeLine(c, x1, y1, x2, y2, color, lw) {
 // Render a freehand pen stroke. Three or more points are drawn as a chain of
 // quadratic curves through the segment midpoints, which rounds off the corners
 // between samples; `sharp` strokes (recognised polygons) stay a plain polyline.
+// Width of a pressure-sensitive stroke at one sample. Half pressure draws the
+// nominal width; a light touch thins to 35% and a firm one swells to 165%.
+function pressureWidth(lw, p) {
+  const pr = p[2] == null ? 0.5 : p[2];
+  return Math.max(0.6, lw * (0.35 + 1.3 * pr));
+}
+
+// Stylus strokes carry a pressure value per point ([x, y, pressure]) and are
+// drawn with a varying width. Same curve as strokeFreehand, cut into runs of
+// equal (half-pixel quantised) width so a long stroke stays a handful of paths.
+function strokePressure(c, pts, color, lw) {
+  c.save();
+  c.globalCompositeOperation = 'source-over';
+  c.strokeStyle = color;
+  c.fillStyle = color;
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  if (pts.length === 1) {
+    c.beginPath();
+    c.arc(pts[0][0], pts[0][1], pressureWidth(lw, pts[0]) / 2, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+    return;
+  }
+  const n = pts.length;
+  let px = pts[0][0], py = pts[0][1];
+  let runW = null;
+  for (let i = 1; i < n; i++) {
+    const w = Math.round((pressureWidth(lw, pts[i - 1]) + pressureWidth(lw, pts[i])) * 1) / 2;
+    if (w !== runW) {
+      if (runW !== null) c.stroke();
+      c.beginPath();
+      c.moveTo(px, py);
+      c.lineWidth = w;
+      runW = w;
+    }
+    if (i === n - 1) {
+      px = pts[i][0]; py = pts[i][1];
+      c.lineTo(px, py);
+    } else {
+      px = (pts[i][0] + pts[i + 1][0]) / 2; py = (pts[i][1] + pts[i + 1][1]) / 2;
+      c.quadraticCurveTo(pts[i][0], pts[i][1], px, py);
+    }
+  }
+  c.stroke();
+  c.restore();
+}
+
 function strokeFreehand(c, pts, color, lw, sharp) {
   if (!pts || pts.length === 0) return;
+  if (!sharp && pts[0].length > 2) { strokePressure(c, pts, color, lw); return; }
   c.save();
   c.globalCompositeOperation = 'source-over';
   c.strokeStyle = color;
@@ -656,14 +734,43 @@ function drawPaperPattern(c) {
 }
 
 // ─── Compositing ───
+// Paint the page (background, pattern, ink, shapes) onto a context, leaving
+// out one shape if asked.
+function paintBoard(c, skip) {
+  c.globalCompositeOperation = 'source-over';
+  c.clearRect(0, 0, W, H);
+  c.fillStyle = canvasBgColor();
+  c.fillRect(0, 0, W, H);
+  drawPaperPattern(c);
+  c.drawImage(inkCanvas, 0, 0, W, H);
+  for (const s of shapes) if (s !== skip) drawShape(c, s);
+}
+
+// While a pen stroke is being drawn, the rest of the page is frozen in a
+// bitmap, so each frame repaints one stroke instead of every shape on the
+// page. This keeps a stylus responsive on a full page.
+const penLayer = document.createElement('canvas');
+penLayer.width = canvas.width;
+penLayer.height = canvas.height;
+const penLayerCtx = penLayer.getContext('2d');
+penLayerCtx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+let penLayerFor = null; // the stroke the frozen layer was built around
+function invalidatePenLayer() { penLayerFor = null; }
+
 function render() {
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = canvasBgColor();
-  ctx.fillRect(0, 0, W, H);
-  drawPaperPattern(ctx);
-  ctx.drawImage(inkCanvas, 0, 0, W, H);
-  for (const s of shapes) drawShape(ctx, s);
+  if (isDrawing && currentTool === 'pen' && activeStroke && shapes[shapes.length - 1] === activeStroke) {
+    if (penLayerFor !== activeStroke) {
+      paintBoard(penLayerCtx, activeStroke);
+      penLayerFor = activeStroke;
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(penLayer, 0, 0, W, H);
+    drawShape(ctx, activeStroke);
+    return;
+  }
+  penLayerFor = null;
+  paintBoard(ctx, null);
   if (showsSelection() && selectedIds.length) drawSelection();
 }
 
@@ -758,10 +865,10 @@ if (persisted) {
     // Backward-compat: older saves stored a flattened bitmap as `data`.
     const ink = p.ink || p.data || transparentInk();
     const sh = Array.isArray(p.shapes) ? p.shapes : [];
-    return { ink, shapes: sh, data: ink, undoStack: [{ ink, shapes: cloneShapes(sh) }] };
+    return { id: p.id || newPageId(), ink, shapes: sh, data: ink, undoStack: [{ ink, shapes: cloneShapes(sh) }] };
   });
   currentPage = Math.min(persisted.currentPage || 0, pages.length - 1);
-  pages.forEach(p => bumpSeq(p.shapes));
+  pages.forEach(p => { bumpSeq(p.shapes); detectInk(p); });
   loadPage(currentPage);
   flattenAllThumbnails();
 } else {
@@ -777,7 +884,7 @@ function cloneShapes(arr) {
 function makeBlankPage() {
   const ink = transparentInk();
   const data = flattenInkAndShapes(null, []);
-  return { ink, shapes: [], data, undoStack: [{ ink, shapes: [] }] };
+  return { id: newPageId(), ink, shapes: [], data, undoStack: [{ ink, shapes: [] }] };
 }
 
 // Flatten background + an ink bitmap (or the live inkCanvas if null) + shapes.
@@ -850,6 +957,7 @@ function resetAllPages() {
 function clearAllPages() {
   if (!confirm('Clear the contents of all pages? This cannot be undone.')) return;
   pages.forEach(p => {
+    touchInk(p);
     p.ink = transparentInk();
     p.shapes = [];
     p.undoStack = [{ ink: p.ink, shapes: [] }];
@@ -1031,6 +1139,7 @@ function undo() {
   const page = pages[currentPage];
   if (page.undoStack.length <= 1) return;
   page.undoStack.pop();
+  touchInk(page);
   const snap = page.undoStack[page.undoStack.length - 1];
   page.shapes = cloneShapes(snap.shapes);
   shapes = page.shapes;
@@ -1230,8 +1339,10 @@ async function setSurface(name) {
   // Crossing the light/dark boundary recolours existing ink so it stays visible.
   if (crossesDark) {
     for (const page of pages) {
+      touchInk(page);
       page.ink = await invertImageDataURL(page.ink);
       page.shapes.forEach(s => { s.color = invertHex(s.color); });
+      page.liveDirty = true;
       page.undoStack = await Promise.all(page.undoStack.map(async (snap) => ({
         ink: await invertImageDataURL(snap.ink),
         shapes: snap.shapes.map(s => ({ ...s, color: invertHex(s.color) })),
@@ -1591,7 +1702,7 @@ function moveSelect(pos) {
         s.x1 = it.orig.x1 + dx; s.y1 = it.orig.y1 + dy;
         s.x2 = it.orig.x2 + dx; s.y2 = it.orig.y2 + dy;
       } else if (it.kind === 'stroke') {
-        s.pts = it.orig.pts.map(p => [p[0] + dx, p[1] + dy]);
+        s.pts = it.orig.pts.map(p => [p[0] + dx, p[1] + dy, ...p.slice(2)]);
       } else {
         s.x = it.orig.x + dx; s.y = it.orig.y + dy;
       }
@@ -1681,6 +1792,7 @@ function eraseStrokesAt(pos, radius) {
 }
 
 function eraseAt(pos) {
+  touchInk(pages[currentPage]);
   // Legacy raster ink: punch a hole along the drag.
   inkCtx.save();
   inkCtx.globalCompositeOperation = 'destination-out';
@@ -1722,6 +1834,15 @@ const HOLD_MS = 550;       // hold still this long to tidy the stroke into a sha
 const HOLD_SLOP = 4;       // movement (canvas px) that still counts as holding still
 
 let brush = null;        // stabilised pen position
+let penStylus = false;   // the current stroke comes from a stylus (Apple Pencil, Surface Pen)
+let brushP = 0.5;        // smoothed stylus pressure
+const STYLUS_STRING = 1.5; // a stylus is steady already: cap the stabiliser string here
+
+function r1(v) { return Math.round(v * 10) / 10; }
+// Pressure of a pointer event, or null when the device does not report one.
+function pressureOf(e) {
+  return e && e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : null;
+}
 let penPointer = null;   // latest raw pointer position
 let penStraight = false; // Shift held: the stroke is a straight segment
 let holdAnchor = null;
@@ -1751,10 +1872,14 @@ function constrainEnd(start, pos, def) {
   };
 }
 
+function penPoint(x, y) {
+  return penStylus ? [r1(x), r1(y), Math.round(brushP * 100) / 100] : [r1(x), r1(y)];
+}
+
 function penAddPoint(x, y) {
   const pts = activeStroke.pts;
   const last = pts[pts.length - 1];
-  if (Math.hypot(x - last[0], y - last[1]) >= PEN_MIN_DIST) pts.push([x, y]);
+  if (Math.hypot(x - last[0], y - last[1]) >= PEN_MIN_DIST) pts.push(penPoint(x, y));
 }
 
 function armHold(pos) {
@@ -1763,9 +1888,11 @@ function armHold(pos) {
   holdTimer = setTimeout(snapHeldStroke, HOLD_MS);
 }
 
-function penStart(pos) {
+function penStart(pos, pressure) {
+  penStylus = pressure != null;
+  brushP = penStylus ? pressure : 0.5;
   activeStroke = {
-    id: newId(), type: 'stroke', pts: [[pos.x, pos.y]],
+    id: newId(), type: 'stroke', pts: [penPoint(pos.x, pos.y)],
     color: colorPicker.value, lineWidth: toolSizes.pen,
   };
   shapes.push(activeStroke);
@@ -1775,23 +1902,24 @@ function penStart(pos) {
   armHold(pos);
 }
 
-function penMove(pos, shift) {
+function penMove(pos, shift, pressure) {
   if (!activeStroke) return;
   penPointer = pos;
+  if (penStylus && pressure != null) brushP += (pressure - brushP) * 0.4;
   if (!holdAnchor || dist(pos, holdAnchor) > HOLD_SLOP) armHold(pos);
 
   if (shift) {
     // Straight segment from where the stroke began, easing onto 45° steps.
     const p0 = activeStroke.pts[0];
     const end = snapAngle({ x: p0[0], y: p0[1] }, pos, 6);
-    activeStroke.pts = [p0, [end.x, end.y]];
+    activeStroke.pts = [[p0[0], p0[1]], [r1(end.x), r1(end.y)]];
     penStraight = true;
     brush = { x: end.x, y: end.y };
     return;
   }
   penStraight = false;
 
-  const r = SMOOTH_LEVELS[smoothing];
+  const r = penStylus ? Math.min(SMOOTH_LEVELS[smoothing], STYLUS_STRING) : SMOOTH_LEVELS[smoothing];
   const d = dist(pos, brush);
   if (d <= r) return;
   const k = (d - r) / d;
@@ -1949,6 +2077,7 @@ function snapHeldStroke() {
   if (i !== -1) shapes.splice(i, 1, shape);
   activeStroke = null;
   render();
+  if (window.Live) Live.localChanged();
   showToast(`Tidied to ${label}`);
 }
 
@@ -2000,7 +2129,7 @@ function startDraw(e) {
   if (currentTool === 'eraser') {
     eraseAt(pos);
   } else {
-    penStart(pos);
+    penStart(pos, pressureOf(e));
   }
   render();
 }
@@ -2051,8 +2180,8 @@ function draw(e) {
   } else {
     // Use every sample the browser batched into this frame, not just the last.
     const batch = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
-    if (batch.length) for (const ce of batch) penMove(getPosition(ce), e.shiftKey);
-    else penMove(pos, e.shiftKey);
+    if (batch.length) for (const ce of batch) penMove(getPosition(ce), e.shiftKey, pressureOf(ce));
+    else penMove(pos, e.shiftKey, pressureOf(e));
   }
   lastX = pos.x;
   lastY = pos.y;
@@ -2099,11 +2228,63 @@ function syncCurrentPage() {
 // The pointer is captured for the length of a drag, so a stroke carries on
 // when the cursor slips off the canvas instead of being cut short.
 let activePointer = null;
+let activeType = null;
+
+// Palm rejection. Once a stylus has touched the board, fingers stop drawing
+// (a resting palm is a finger as far as the browser can tell). The hand button
+// that appears in the toolbar turns finger drawing back on.
+let stylusSeen = false;
+let fingerDraw = false;
+const btnFinger = document.getElementById('btnFinger');
+function syncFingerBtn() {
+  btnFinger.hidden = !stylusSeen;
+  btnFinger.classList.toggle('active', fingerDraw);
+  btnFinger.title = fingerDraw
+    ? 'Finger drawing is on. Tap to draw with the stylus only (palm rejection)'
+    : 'Stylus only: fingers and palm are ignored. Tap to allow finger drawing';
+}
+btnFinger.addEventListener('click', () => {
+  fingerDraw = !fingerDraw;
+  syncFingerBtn();
+  showToast(fingerDraw ? 'Finger drawing on' : 'Stylus only');
+});
+
+// Throw away whatever the active pointer was doing (a palm that landed just
+// before the stylus) without committing it.
+function abortDraw() {
+  const id = activePointer;
+  activePointer = null;
+  try { canvas.releasePointerCapture(id); } catch { /* not captured */ }
+  if (!isDrawing) return;
+  if (currentTool === 'pen' && activeStroke) {
+    const i = shapes.indexOf(activeStroke);
+    if (i !== -1) shapes.splice(i, 1);
+    clearTimeout(holdTimer);
+    activeStroke = null; brush = null; penPointer = null; holdAnchor = null;
+    isDrawing = false;
+    render();
+    if (window.Live) Live.localChanged();
+    return;
+  }
+  if (isShapeTool(currentTool)) { isDrawing = false; lineStart = null; render(); return; }
+  stopDraw();
+}
 
 canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'pen') {
+    if (!stylusSeen) {
+      stylusSeen = true;
+      syncFingerBtn();
+      showToast('Stylus detected: palm and fingers are now ignored');
+    }
+    if (activePointer !== null && activeType === 'touch') abortDraw();
+  } else if (e.pointerType === 'touch' && stylusSeen && !fingerDraw) {
+    return;
+  }
   if (activePointer !== null) return;                    // ignore extra fingers
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   activePointer = e.pointerId;
+  activeType = e.pointerType;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
   startDraw(e);
 });
@@ -2136,6 +2317,7 @@ canvas.addEventListener('dblclick', (e) => {
 
 // ─── Actions ───
 function clearCanvas() {
+  touchInk(pages[currentPage]);
   inkCtx.clearRect(0, 0, W, H);
   shapes.length = 0;
   clearSelection();

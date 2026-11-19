@@ -1,0 +1,37 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$room": {
+        ".read": "data.child('meta/created').val() > now - 172800000",
+        ".write": "$room.matches(/^[A-Z2-9]{6}$/) && ((!data.exists() && newData.child('meta/created').val() == now) || (data.exists() && !newData.exists()) || (data.exists() && data.child('meta/created').val() > now - 172800000 && newData.child('meta/created').val() == data.child('meta/created').val()))",
+        "meta": {
+          "created": { ".validate": "newData.isNumber()" },
+          "v": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+        "order": { ".validate": "newData.isString() && newData.val().length < 4000" },
+        "sp": { ".validate": "newData.isString() && newData.val().length < 40" },
+        "cur": { ".validate": "newData.isString() && newData.val().length < 40" },
+        "presence": {
+          "$client": { ".validate": "newData.isBoolean()" }
+        },
+        "pages": {
+          "$page": {
+            "ink": { ".validate": "newData.isString() && newData.val().length < 4000000" },
+            "shapes": {
+              "$shape": {
+                ".validate": "newData.hasChildren(['type', 'z'])",
+                "p": { ".validate": "newData.isString() && newData.val().length < 400000" },
+                "text": { ".validate": "newData.isString() && newData.val().length < 5000" }
+              }
+            },
+            "$other": { ".validate": false }
+          }
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}
