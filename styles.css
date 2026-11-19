@@ -1290,3 +1290,29 @@ button, .tool-btn, .btn, .swatch, .page-thumb {
 
   .status-bar { padding-bottom: env(safe-area-inset-bottom); }
 }
+
+/* ─── "Add page" tile at the end of the page strip ─── */
+.page-add {
+  flex-shrink: 0;
+  width: 96px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--border-focus);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.page-add svg {
+  width: 30px;
+  height: 30px;
+}
+
+.page-add:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}

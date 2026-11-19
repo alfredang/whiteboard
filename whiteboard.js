@@ -8,7 +8,6 @@ const statusMsg = document.getElementById('statusMsg');
 const statusCoords = document.getElementById('statusCoords');
 const toast = document.getElementById('toast');
 const pageStripInner = document.getElementById('pageStripInner');
-const btnAddPage = document.getElementById('btnAddPage');
 
 const btnSelect = document.getElementById('btnSelect');
 const btnPen = document.getElementById('btnPen');
@@ -1112,6 +1111,15 @@ function renderPageStrip() {
     }
     pageStripInner.appendChild(thumb);
   });
+  // "Add page" tile, always right after the last page.
+  const add = document.createElement('button');
+  add.className = 'page-add';
+  add.id = 'btnAddPage';
+  add.title = 'Add page';
+  add.setAttribute('aria-label', 'Add page');
+  add.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+  add.addEventListener('click', addPage);
+  pageStripInner.appendChild(add);
   pageStripInner.appendChild(dropIndicator);
 
   const activeThumb = pageStripInner.querySelector('.page-thumb.active');
@@ -1119,7 +1127,6 @@ function renderPageStrip() {
   updateStatusPage();
 }
 
-btnAddPage.addEventListener('click', addPage);
 
 // Clear / reset dropdown menu
 document.querySelectorAll('#resetPanel .menu-item').forEach(item => {
