@@ -1316,3 +1316,120 @@ button, .tool-btn, .btn, .swatch, .page-thumb {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* ─── Workspace: shape rail + board ─── */
+.workspace {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.workspace .canvas-container { min-width: 0; }
+
+/* The rail replaces the two shape dropdowns in the toolbar. */
+.toolbar-group:has(#ddShapes),
+.toolbar-group:has(#ddShapes) + .toolbar-divider {
+  display: none;
+}
+
+.shape-rail {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 8px;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+  z-index: 2;
+  animation: fadeUp 0.4s ease 0.1s both;
+}
+
+.rail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 40px);
+  gap: 4px;
+}
+
+.shape-rail .palette-title { margin: 0 2px 6px; }
+
+.shape-rail .palette-item {
+  cursor: grab;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.rail-dragging,
+body.rail-dragging * { cursor: grabbing !important; }
+
+/* The shape following the pointer while it is dragged to the board */
+.rail-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--accent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  opacity: 0.92;
+  pointer-events: none;
+  z-index: 300;
+}
+
+.rail-ghost svg {
+  width: 36px;
+  height: 36px;
+}
+
+canvas.drop-target {
+  box-shadow:
+    0 0 0 3px var(--accent),
+    0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+@media (pointer: coarse) {
+  .rail-grid { grid-template-columns: repeat(2, 44px); }
+  .shape-rail .palette-item { width: 44px; height: 44px; }
+}
+
+/* Phones and narrow windows: the rail becomes one scrolling row above the board */
+@media (max-width: 768px) {
+  .workspace { flex-direction: column; }
+
+  .shape-rail {
+    flex-direction: row;
+    gap: 10px;
+    padding: 6px 10px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .rail-group { display: flex; align-items: center; }
+
+  .shape-rail .palette-title { display: none; }
+
+  .rail-grid {
+    display: flex;
+    gap: 2px;
+  }
+
+  .rail-group + .rail-group {
+    padding-left: 10px;
+    border-left: 1px solid var(--border-subtle);
+  }
+
+  .shape-rail .palette-item { flex-shrink: 0; }
+}

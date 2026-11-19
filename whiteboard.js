@@ -1262,6 +1262,145 @@ dropdowns.forEach(dd => {
   });
 });
 
+// ─── Shape rail ───
+// Every shape and flowchart element, laid out down the left edge (along the
+// top on a phone). The items are copies of the dropdown palette buttons, so a
+// tap picks the tool exactly as the dropdown did; dragging one onto the board
+// drops a ready-made shape there.
+const shapeRail = document.getElementById('shapeRail');
+[['shapePanel', 'Shapes'], ['processPanel', 'Flowchart']].forEach(([panelId, title]) => {
+  const group = document.createElement('div');
+  group.className = 'rail-group';
+  const label = document.createElement('div');
+  label.className = 'palette-title';
+  label.textContent = title;
+  const grid = document.createElement('div');
+  grid.className = 'rail-grid';
+  document.querySelectorAll(`#${panelId} .palette-item`).forEach(item => {
+    const copy = item.cloneNode(true);
+    copy.title = (copy.title || '') + ' · drag onto the board to place';
+    grid.appendChild(copy);
+  });
+  group.append(label, grid);
+  shapeRail.appendChild(group);
+});
+
+// Drop a default-sized shape centred on a board position.
+const ROUND_TYPES = ['circle', 'triangle', 'righttriangle', 'diamond', 'pentagon', 'hexagon', 'star'];
+function placeShape(tool, pos) {
+  const def = TOOL_DEFS[tool];
+  if (!def) return;
+  if (editing) commitTextEditor();
+  const size = toolSizes.pen;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+  let s;
+  if (def.lineLike) {
+    const half = 80;
+    const cx = clamp(pos.x, half + 4, W - half - 4), cy = clamp(pos.y, 4, H - 4);
+    const start = { x: cx - half, y: cy }, end = { x: cx + half, y: cy };
+    const from = def.snap ? boxAt(start, SNAP_MARGIN) : null;
+    const to = def.snap ? boxAt(end, SNAP_MARGIN) : null;
+    s = {
+      id: newId(), type: def.type, x1: start.x, y1: start.y, x2: end.x, y2: end.y,
+      from: from ? from.id : null, to: to ? to.id : null,
+      color: colorPicker.value, lineWidth: size,
+    };
+  } else {
+    const round = def.menu === 'shapes' && ROUND_TYPES.includes(def.type);
+    const w = round ? 120 : 170, h = round ? 120 : 90;
+    s = {
+      id: newId(), type: def.type,
+      x: clamp(pos.x - w / 2, 2, W - w - 2), y: clamp(pos.y - h / 2, 2, H - h - 2), w, h,
+      text: '', color: colorPicker.value, lineWidth: size,
+    };
+  }
+  shapes.push(s);
+  // Switch to Select so the new shape can be moved or resized straight away.
+  setTool('select');
+  selectOnly(s.id);
+  render();
+  if (def.autoEdit) {
+    openBoxEditor(s);
+  } else {
+    saveUndoState();
+    syncCurrentPage();
+  }
+}
+
+// Dragging from the rail. Touch and stylus moves along the rail scroll it;
+// a move across it (or out of it) picks the shape up.
+let railDrag = null;
+let railSuppressClick = false;
+function railIsRow() { return getComputedStyle(shapeRail).flexDirection === 'row'; }
+function railOverCanvas(e) {
+  const r = canvas.getBoundingClientRect();
+  return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+}
+function railPickUp(d) {
+  d.mode = 'drag';
+  d.ghost = document.createElement('div');
+  d.ghost.className = 'rail-ghost';
+  d.ghost.appendChild(d.item.querySelector('svg').cloneNode(true));
+  document.body.appendChild(d.ghost);
+  document.body.classList.add('rail-dragging');
+}
+function railEnd() {
+  if (!railDrag) return;
+  if (railDrag.ghost) railDrag.ghost.remove();
+  try { railDrag.item.releasePointerCapture(railDrag.id); } catch { /* not captured */ }
+  document.body.classList.remove('rail-dragging');
+  canvas.classList.remove('drop-target');
+  railDrag = null;
+}
+shapeRail.addEventListener('pointerdown', (e) => {
+  const item = e.target.closest('.palette-item');
+  if (!item || railDrag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  railSuppressClick = false;
+  railDrag = { item, tool: item.dataset.tool, id: e.pointerId, x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, mode: null, ghost: null };
+  try { item.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
+});
+shapeRail.addEventListener('pointermove', (e) => {
+  const d = railDrag;
+  if (!d || e.pointerId !== d.id) return;
+  if (!d.mode) {
+    const dx = Math.abs(e.clientX - d.x0), dy = Math.abs(e.clientY - d.y0);
+    if (Math.hypot(dx, dy) < 8) return;
+    const row = railIsRow();
+    const canScroll = row ? shapeRail.scrollWidth > shapeRail.clientWidth : shapeRail.scrollHeight > shapeRail.clientHeight;
+    const along = row ? dx : dy, across = row ? dy : dx;
+    if (e.pointerType !== 'mouse' && canScroll && along > across) d.mode = 'scroll';
+    else railPickUp(d);
+  }
+  if (d.mode === 'scroll') {
+    if (railIsRow()) shapeRail.scrollLeft -= e.clientX - d.lx;
+    else shapeRail.scrollTop -= e.clientY - d.ly;
+    const r = shapeRail.getBoundingClientRect();
+    if (e.clientX < r.left - 12 || e.clientX > r.right + 12 || e.clientY < r.top - 12 || e.clientY > r.bottom + 12) railPickUp(d);
+  }
+  if (d.mode === 'drag') {
+    e.preventDefault();
+    d.ghost.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+    canvas.classList.toggle('drop-target', railOverCanvas(e));
+  }
+  d.lx = e.clientX; d.ly = e.clientY;
+});
+shapeRail.addEventListener('pointerup', (e) => {
+  const d = railDrag;
+  if (!d || e.pointerId !== d.id) return;
+  const mode = d.mode, tool = d.tool;
+  const drop = mode === 'drag' && railOverCanvas(e) ? getPosition(e) : null;
+  railEnd();
+  if (mode) railSuppressClick = true;   // it was a drag or a scroll, not a tap
+  if (drop) placeShape(tool, drop);
+});
+shapeRail.addEventListener('pointercancel', railEnd);
+shapeRail.addEventListener('click', (e) => {
+  if (!railSuppressClick) return;
+  railSuppressClick = false;
+  e.stopPropagation();
+  e.preventDefault();
+}, true);
+
 // Pick a shape/process tool from a palette and remember it on the trigger icon.
 document.querySelectorAll('.palette-item').forEach(item => {
   item.addEventListener('click', () => {

@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Whiteboard">
   <meta name="theme-color" content="#141418">
   <title>Whiteboard</title>
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
   <header>
@@ -341,11 +341,15 @@
     </div>
   </div>
 
+  <div class="workspace">
+  <!-- Shape rail: tap a shape to pick it, or drag it onto the board. Filled by JS. -->
+  <aside class="shape-rail" id="shapeRail" aria-label="Shapes"></aside>
   <div class="canvas-container">
     <canvas id="whiteboard" width="1200" height="700"></canvas>
     <textarea id="shapeTextEditor" class="shape-text-editor" spellcheck="false"
               placeholder="Type label… (Enter to confirm)"></textarea>
     <div id="eraserCursor" class="eraser-ring"></div>
+  </div>
   </div>
 
   <div class="status-bar">
@@ -357,7 +361,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
-  <script src="whiteboard.js?v=20"></script>
+  <script src="whiteboard.js?v=21"></script>
   <script src="live.js?v=3"></script>
 </body>
 </html>
