@@ -738,8 +738,8 @@
     panel.innerHTML = `
       <div class="palette-title">Live session</div>
       <div class="live-code">${room.code}</div>
-      <div class="live-qr" id="liveQr"></div>
-      <p class="live-help">Scan with the iPad camera, or open this board there and enter the code.</p>
+      <div class="live-qr" id="liveQr" title="Click to enlarge"></div>
+      <p class="live-help">Scan with the iPad camera (click the code to enlarge it), or open this board on the iPad and enter the code above.</p>
       <div class="live-row">
         <input class="live-input live-link" id="liveLink" readonly value="${joinUrl()}">
         <button class="btn" id="liveCopy">Copy</button>
@@ -753,13 +753,14 @@
       else { link.select(); document.execCommand('copy'); done(); }
     });
     panel.querySelector('#liveLink').addEventListener('keydown', (e) => e.stopPropagation());
+    panel.querySelector('#liveQr').addEventListener('click', showBigQr);
     panel.querySelector('#liveStop').addEventListener('click', () => { if (room.host) end(); else leave(); });
     const code = room.code;
     loadQrLib().then(() => {
       const el = panel.querySelector('#liveQr');
       if (!el || !room || room.code !== code || el.firstChild) return;
       new window.QRCode(el, {
-        text: joinUrl(), width: 168, height: 168,
+        text: joinUrl(), width: 640, height: 640,
         colorDark: '#111111', colorLight: '#ffffff',
         correctLevel: window.QRCode.CorrectLevel.M,
       });
@@ -767,6 +768,23 @@
       const el = panel.querySelector('#liveQr');
       if (el) el.textContent = 'QR code unavailable';
     });
+  }
+
+  // Full-screen QR code, large enough to scan from across a room.
+  function showBigQr() {
+    const src = panel.querySelector('#liveQr img, #liveQr canvas');
+    if (!room || !src) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'live-overlay';
+    overlay.innerHTML = `
+      <div class="live-overlay-card">
+        <img alt="QR code to join the live session">
+        <div class="live-code">${room.code}</div>
+        <p class="live-help">Scan to join, or open ${location.host}${location.pathname} and enter the code. Click anywhere to close.</p>
+      </div>`;
+    overlay.querySelector('img').src = src.tagName === 'CANVAS' ? src.toDataURL() : src.src;
+    overlay.addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
+    document.body.appendChild(overlay);
   }
 
   // Clicks inside the panel must not reach the document handler that closes dropdowns.
