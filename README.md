@@ -38,7 +38,7 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 | **Lasso select** | Circle several elements to select and move them together (`L`) |
 | **Eraser with size ring** | A circle cursor shows the exact eraser size as you erase (`E`) |
 | **Live session** | Start a session on the classroom PC, scan the QR code with an iPad (or enter the 6-character code) and both devices share one board in real time. Draw on the iPad and it appears on the projector |
-| **Apple Pencil / stylus** | Pressure-sensitive line width, palm rejection (fingers are ignored once a stylus is used; the hand button turns finger drawing back on) and a light stabiliser tuned for a stylus |
+| **Apple Pencil / stylus** | Pressure-sensitive line width, palm rejection (fingers are ignored once a stylus is used; the hand button turns finger drawing back on) and a light stabiliser tuned for a stylus. Double-tap the board with a finger to switch to the next pen colour |
 | **Paper styles** | Whiteboard, paper or blackboard surface, each with a blank, lined, dotted or grid pattern; ink is recoloured when switching between light and dark |
 | **Multi-page support** | Add, delete, navigate, and reset pages with live thumbnail previews |
 | **Colour palette** | 26 swatches plus a custom colour picker; applies to the pen and to selected shapes |

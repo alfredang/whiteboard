@@ -2249,6 +2249,35 @@ btnFinger.addEventListener('click', () => {
   showToast(fingerDraw ? 'Finger drawing on' : 'Stylus only');
 });
 
+// While fingers are not drawing, a finger double-tap on the board switches to
+// the next pen colour, so the hand holding the stylus never leaves the page.
+// (A web page cannot see the double-tap on the barrel of an Apple Pencil.)
+const TAP_MS = 250;        // a tap is down and up within this
+const DOUBLE_TAP_MS = 400; // gap allowed between the two taps
+const TAP_SLOP = 30;       // screen px the taps may differ by
+let tapDown = null;        // finger currently down: { id, x, y, t }
+let lastTap = null;        // last completed tap: { x, y, t }
+function fingerTapDown(e) {
+  tapDown = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
+}
+canvas.addEventListener('pointerup', (e) => {
+  if (!tapDown || e.pointerId !== tapDown.id) return;
+  const now = performance.now();
+  const d = tapDown;
+  tapDown = null;
+  // A resting palm stays down or slides; only a quick, still touch is a tap.
+  if (now - d.t > TAP_MS || Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_SLOP) { lastTap = null; return; }
+  if (isDrawing) { lastTap = null; return; }
+  if (lastTap && now - lastTap.t < DOUBLE_TAP_MS && Math.hypot(d.x - lastTap.x, d.y - lastTap.y) < TAP_SLOP) {
+    lastTap = null;
+    if (boxAt(getPosition(e), 0)) return; // double-tap on a box edits its label instead
+    cyclePenColor(1);
+    return;
+  }
+  lastTap = { x: d.x, y: d.y, t: now };
+});
+canvas.addEventListener('pointercancel', (e) => { if (tapDown && e.pointerId === tapDown.id) tapDown = null; });
+
 // Throw away whatever the active pointer was doing (a palm that landed just
 // before the stylus) without committing it.
 function abortDraw() {
@@ -2275,10 +2304,11 @@ canvas.addEventListener('pointerdown', (e) => {
     if (!stylusSeen) {
       stylusSeen = true;
       syncFingerBtn();
-      showToast('Stylus detected: palm and fingers are now ignored');
+      showToast('Stylus detected: palm is ignored. Double-tap with a finger to change colour');
     }
     if (activePointer !== null && activeType === 'touch') abortDraw();
   } else if (e.pointerType === 'touch' && stylusSeen && !fingerDraw) {
+    fingerTapDown(e);
     return;
   }
   if (activePointer !== null) return;                    // ignore extra fingers
