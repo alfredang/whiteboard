@@ -561,32 +561,32 @@ header {
 
 .size-value {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  min-width: 28px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 40px;
   text-align: right;
 }
 
 .size-label {
   font-family: var(--font-mono);
-  font-size: 0.65rem;
-  font-weight: 500;
-  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  min-width: 32px;
+  min-width: 40px;
 }
 
 .smooth-select {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 500;
+  font-size: 0.85rem;
+  font-weight: 600;
   color: var(--text-primary);
   background: var(--bg-hover);
-  border: 1px solid transparent;
+  border: 1px solid var(--border-focus);
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 5px 8px;
   cursor: pointer;
 }
 
