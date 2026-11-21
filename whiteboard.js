@@ -10,6 +10,7 @@ const toast = document.getElementById('toast');
 const pageStripInner = document.getElementById('pageStripInner');
 
 const btnSelect = document.getElementById('btnSelect');
+const selBar = document.getElementById('selBar');
 const btnPen = document.getElementById('btnPen');
 const btnEraser = document.getElementById('btnEraser');
 const btnLasso = document.getElementById('btnLasso');
@@ -771,6 +772,7 @@ function render() {
   penLayerFor = null;
   paintBoard(ctx, null);
   if (showsSelection() && selectedIds.length) drawSelection();
+  updateSelBar();
 }
 
 // Both Select and Lasso show and manipulate the current selection.
@@ -780,9 +782,11 @@ function drawSelection() {
   // Resize handles only when exactly one shape is selected; a multi-selection
   // just gets an outline per element.
   const single = selectedIds.length === 1;
+  const frame = groupFrame();
   for (const id of selectedIds) {
     const s = shapeById(id);
     if (!s) continue;
+    if (frame && single) continue; // a lone stroke is outlined by the frame itself
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     ctx.strokeStyle = ACCENT;
@@ -815,6 +819,22 @@ function drawSelection() {
     }
     ctx.restore();
   }
+  if (frame) {
+    // One frame round the whole selection; its corners scale everything together.
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = ACCENT;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#fff';
+    for (const [cx, cy] of boxCorners(frame)) {
+      ctx.fillRect(cx - FRAME_HANDLE / 2, cy - FRAME_HANDLE / 2, FRAME_HANDLE, FRAME_HANDLE);
+      ctx.strokeRect(cx - FRAME_HANDLE / 2, cy - FRAME_HANDLE / 2, FRAME_HANDLE, FRAME_HANDLE);
+    }
+    ctx.restore();
+  }
 }
 
 function boxCorners(b) {
@@ -824,15 +844,67 @@ function boxCorners(b) {
   ];
 }
 
+// Handles are easier to hit with a finger or stylus than with a mouse.
+function handleReach() { return activeType === 'touch' || activeType === 'pen' ? 24 : HANDLE_HIT; }
+
 function handleAt(pos, box) {
+  const reach = handleReach();
   const map = {
     nw: [box.x, box.y], ne: [box.x + box.w, box.y],
     sw: [box.x, box.y + box.h], se: [box.x + box.w, box.y + box.h],
   };
   for (const k in map) {
-    if (Math.abs(pos.x - map[k][0]) <= HANDLE_HIT && Math.abs(pos.y - map[k][1]) <= HANDLE_HIT) return k;
+    if (Math.abs(pos.x - map[k][0]) <= reach && Math.abs(pos.y - map[k][1]) <= reach) return k;
   }
   return null;
+}
+
+// ─── Selection geometry ───
+const FRAME_HANDLE = 11; // drawn size of the group frame's corner handles
+const FRAME_PAD = 8;     // gap between the selection and its frame
+
+function selectedShapes() { return selectedIds.map(id => shapeById(id)).filter(Boolean); }
+
+function shapeBounds(s) {
+  if (isLineType(s.type)) {
+    const [p1, p2] = arrowEnds(s);
+    return normBounds(p1.x, p1.y, p2.x, p2.y);
+  }
+  if (isStroke(s)) return strokeBounds(s);
+  return { x: s.x, y: s.y, w: s.w, h: s.h };
+}
+
+// Bounding box of everything selected, or null when nothing is.
+function selectionBounds() {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const s of selectedShapes()) {
+    const b = shapeBounds(s);
+    x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y);
+    x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h);
+  }
+  return x1 === Infinity ? null : { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+// The frame drawn round a selection of several elements, or round one freehand
+// stroke. A lone box keeps its own resize handles and a lone line its end dots.
+function groupFrame() {
+  const sel = selectedShapes();
+  if (!sel.length || (sel.length === 1 && !isStroke(sel[0]))) return null;
+  const b = selectionBounds();
+  return { x: b.x - FRAME_PAD, y: b.y - FRAME_PAD, w: b.w + FRAME_PAD * 2, h: b.h + FRAME_PAD * 2 };
+}
+
+function inBounds(pos, b) {
+  return pos.x >= b.x && pos.x <= b.x + b.w && pos.y >= b.y && pos.y <= b.y + b.h;
+}
+
+// Is the point on the current selection: a handle, or anywhere inside the
+// group frame? Pressing there acts on the selection instead of starting a lasso.
+function selectionGrab(pos) {
+  const frame = groupFrame();
+  if (frame) return !!handleAt(pos, frame) || inBounds(pos, frame);
+  const sel = selectedShapes();
+  return sel.length === 1 && isBoxLike(sel[0]) && !!handleAt(pos, sel[0]);
 }
 
 // ─── Init Canvas ───
@@ -1566,12 +1638,19 @@ function buildPalette() {
 // Apply a colour to the pen and to every selected shape.
 function applyColor(hex) {
   setColor(hex);
-  if (currentTool === 'select' && selectedIds.length) {
-    let changed = false;
-    selectedIds.forEach(id => { const s = shapeById(id); if (s) { s.color = hex; changed = true; } });
-    if (changed) { render(); saveUndoState(); syncCurrentPage(); }
-  }
+  colorSelection(hex);
   if (currentTool === 'eraser') setTool('pen');
+}
+
+// Recolour whatever is selected (Select or Lasso tool).
+function colorSelection(hex) {
+  if (!showsSelection()) return;
+  const sel = selectedShapes();
+  if (!sel.length) return;
+  sel.forEach(s => { s.color = hex; });
+  render();
+  saveUndoState();
+  syncCurrentPage();
 }
 
 // Quick marker colours cycled by Ctrl/Cmd+A. The first entry is the surface's
@@ -1661,7 +1740,7 @@ function commitLasso() {
   lassoPoints = [];
   selectedIds = ids;
   render();
-  if (ids.length) showToast(`${ids.length} element${ids.length > 1 ? 's' : ''} selected — drag to move`);
+  if (ids.length) showToast(`${ids.length} element${ids.length > 1 ? 's' : ''} selected`);
 }
 
 // ─── Floating text editor for box labels ───
@@ -1800,12 +1879,73 @@ function finishShape() {
 // ─── Select / Move / Resize interactions ───
 // Build the drag state for moving every selected shape together.
 function startGroupMove(pos) {
-  const items = selectedIds.map(id => shapeById(id)).filter(Boolean).map(s => {
+  const items = selectedShapes().map(s => {
     if (isLineType(s.type)) return { shape: s, kind: 'line', orig: { x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2 } };
     if (isStroke(s)) return { shape: s, kind: 'stroke', orig: { pts: s.pts.map(p => p.slice()) } };
     return { shape: s, kind: 'box', orig: { x: s.x, y: s.y } };
   });
   return { mode: 'move', start: pos, items, moved: false, single: items.length === 1 };
+}
+
+// ─── Scaling a selection ───
+// Snapshot of every selected shape, so a scale is always applied to the
+// original geometry (no drift while dragging).
+function scaleItems() {
+  return selectedShapes().map(s => {
+    if (isLineType(s.type)) {
+      // An end bound to a box that is not being scaled too is cut loose, or the
+      // binding would hold that end where it is.
+      const [p1, p2] = arrowEnds(s);
+      return {
+        shape: s, kind: 'line',
+        orig: { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y },
+        freeFrom: !!s.from && !isSelected(s.from),
+        freeTo: !!s.to && !isSelected(s.to),
+      };
+    }
+    if (isStroke(s)) return { shape: s, kind: 'stroke', orig: { pts: s.pts.map(p => p.slice()), lineWidth: s.lineWidth } };
+    return { shape: s, kind: 'box', orig: { x: s.x, y: s.y, w: s.w, h: s.h } };
+  });
+}
+
+// Scale the snapshot by factor f about the point (ox, oy).
+function applyScale(items, ox, oy, f) {
+  for (const it of items) {
+    const s = it.shape, o = it.orig;
+    if (it.kind === 'line') {
+      if (it.freeFrom) s.from = null;
+      if (it.freeTo) s.to = null;
+      s.x1 = ox + (o.x1 - ox) * f; s.y1 = oy + (o.y1 - oy) * f;
+      s.x2 = ox + (o.x2 - ox) * f; s.y2 = oy + (o.y2 - oy) * f;
+    } else if (it.kind === 'stroke') {
+      s.pts = o.pts.map(p => [ox + (p[0] - ox) * f, oy + (p[1] - oy) * f, ...p.slice(2)]);
+      s.lineWidth = Math.max(0.5, o.lineWidth * f);
+    } else {
+      s.x = ox + (o.x - ox) * f; s.y = oy + (o.y - oy) * f;
+      s.w = o.w * f; s.h = o.h * f;
+    }
+  }
+}
+
+// Keep a scale factor from shrinking the selection to nothing or blowing it
+// up far beyond the board.
+function clampScale(f, b) {
+  const big = Math.max(b.w, b.h, 1);
+  const lo = Math.min(1, 16 / big);
+  const hi = Math.max(1, (Math.max(W, H) * 2) / big);
+  return Math.max(lo, Math.min(hi, f));
+}
+
+// Scale the selection about its centre (the action bar's bigger / smaller buttons).
+function scaleSelection(f) {
+  const b = selectionBounds();
+  if (!b) return;
+  f = clampScale(f, b);
+  if (f === 1) return;
+  applyScale(scaleItems(), b.x + b.w / 2, b.y + b.h / 2, f);
+  render();
+  saveUndoState();
+  syncCurrentPage();
 }
 
 function startSelect(pos, additive) {
@@ -1815,6 +1955,31 @@ function startSelect(pos, additive) {
     if (sel && isBoxLike(sel)) {
       const h = handleAt(pos, sel);
       if (h) { dragState = { mode: 'resize', box: sel, handle: h, moved: false }; render(); return; }
+    }
+  }
+
+  // A corner of the group frame scales the whole selection from the opposite corner.
+  const frame = groupFrame();
+  if (frame) {
+    const h = handleAt(pos, frame);
+    if (h) {
+      const anchor = {
+        x: h.includes('w') ? frame.x + frame.w : frame.x,
+        y: h.includes('n') ? frame.y + frame.h : frame.y,
+      };
+      dragState = {
+        mode: 'scale', anchor, items: scaleItems(), bounds: selectionBounds(),
+        startDist: Math.max(1, Math.hypot(pos.x - anchor.x, pos.y - anchor.y)), moved: false,
+      };
+      render();
+      return;
+    }
+    // Anywhere else inside the frame drags the selection, so thin handwriting
+    // does not have to be hit exactly.
+    if (!additive && inBounds(pos, frame) && !shapeAt(pos)) {
+      dragState = startGroupMove(pos);
+      render();
+      return;
     }
   }
 
@@ -1857,6 +2022,10 @@ function moveSelect(pos) {
         s.x = it.orig.x + dx; s.y = it.orig.y + dy;
       }
     }
+  } else if (dragState.mode === 'scale') {
+    const a = dragState.anchor;
+    const f = clampScale(Math.hypot(pos.x - a.x, pos.y - a.y) / dragState.startDist, dragState.bounds);
+    applyScale(dragState.items, a.x, a.y, f);
   } else if (dragState.mode === 'resize') {
     const b = dragState.box;
     let x1 = b.x, y1 = b.y, x2 = b.x + b.w, y2 = b.y + b.h;
@@ -1874,6 +2043,7 @@ function moveSelect(pos) {
 function endSelect() {
   if (dragState && dragState.moved) { saveUndoState(); syncCurrentPage(); }
   dragState = null;
+  updateSelBar();
 }
 
 function updateSelectCursor(pos) {
@@ -1885,7 +2055,81 @@ function updateSelectCursor(pos) {
       if (h === 'ne' || h === 'sw') { canvas.style.cursor = 'nesw-resize'; return; }
     }
   }
+  const frame = groupFrame();
+  if (frame) {
+    const h = handleAt(pos, frame);
+    if (h === 'nw' || h === 'se') { canvas.style.cursor = 'nwse-resize'; return; }
+    if (h === 'ne' || h === 'sw') { canvas.style.cursor = 'nesw-resize'; return; }
+    if (inBounds(pos, frame)) { canvas.style.cursor = 'move'; return; }
+  }
   canvas.style.cursor = shapeAt(pos) ? 'move' : (currentTool === 'lasso' ? 'crosshair' : 'default');
+}
+
+// ─── Selection action bar (colour, size, delete) ───
+// Floats beside the selection so everything can be done by touch, with no
+// keyboard: tap a colour, make the selection bigger or smaller, or delete it.
+const SEL_ICONS = {
+  smaller: '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>',
+  bigger: '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+};
+const SEL_SCALE_STEP = 1.2;
+
+function buildSelBar() {
+  const add = (cls, title, html, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = cls;
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.innerHTML = html;
+    b.addEventListener('click', (e) => { e.stopPropagation(); fn(b); b.blur(); });
+    selBar.appendChild(b);
+    return b;
+  };
+  const divider = () => {
+    const d = document.createElement('span');
+    d.className = 'sel-divider';
+    selBar.appendChild(d);
+  };
+  const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SEL_ICONS[name]}</svg>`;
+
+  QUICK_COLORS.forEach(([hex, name]) => {
+    const b = add('sel-color', name, '<span></span>', (btn) => colorSelection(btn.dataset.color));
+    if (hex) { b.dataset.color = hex; b.firstChild.style.background = hex; }
+    else b.dataset.surfaceInk = '1'; // follows the board: black on white, chalk on black
+  });
+  divider();
+  add('sel-btn', 'Smaller', icon('smaller'), () => scaleSelection(1 / SEL_SCALE_STEP));
+  add('sel-btn', 'Bigger', icon('bigger'), () => scaleSelection(SEL_SCALE_STEP));
+  divider();
+  add('sel-btn danger', 'Delete', icon('trash'), () => deleteSelected());
+
+  // Presses on the bar must not reach the board or close anything behind it.
+  selBar.addEventListener('pointerdown', (e) => e.stopPropagation());
+}
+
+function updateSelBar() {
+  const b = (showsSelection() && !isDrawing && !editing) ? selectionBounds() : null;
+  if (!b) { selBar.classList.remove('visible'); return; }
+
+  const ink = selBar.querySelector('[data-surface-ink]');
+  if (ink) { ink.dataset.color = tpl().ink; ink.firstChild.style.background = tpl().ink; }
+  selBar.classList.add('visible');
+
+  // Above the selection when there is room, otherwise below it, and always
+  // inside the board area.
+  const pad = FRAME_PAD + 14;
+  const r = canvasToScreenRect(b.x, b.y, b.x + b.w, b.y + b.h);
+  const box = selBar.parentElement;
+  const bw = selBar.offsetWidth, bh = selBar.offsetHeight;
+  let top = r.top - pad - bh;
+  if (top < 4) top = r.top + r.height + pad;
+  if (top + bh > box.clientHeight - 4) top = Math.max(4, box.clientHeight - bh - 4);
+  let left = r.left + r.width / 2 - bw / 2;
+  left = Math.max(4, Math.min(left, box.clientWidth - bw - 4));
+  selBar.style.left = left + 'px';
+  selBar.style.top = top + 'px';
 }
 
 function deleteSelected() {
@@ -2253,7 +2497,7 @@ function startDraw(e) {
   if (currentTool === 'lasso') {
     isDrawing = true;
     // Press on an element → move it (or the whole selection); empty space → lasso.
-    if (shapeAt(pos)) {
+    if (shapeAt(pos) || selectionGrab(pos)) {
       lassoMoving = true;
       startSelect(pos, e.shiftKey);
     } else {
@@ -2589,11 +2833,13 @@ function resizeCanvas() {
 window.addEventListener('resize', () => {
   if (editing) commitTextEditor();
   resizeCanvas();
+  updateSelBar();
 });
 resizeCanvas();
 
 // ─── Initial render ───
 buildPalette();
+buildSelBar();
 applyCanvasBg();
 setColor(tpl().ink);
 syncTemplateMenu();

@@ -34,8 +34,9 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 | **Shapes** | Rectangle (`R`), circle / oval (`O`), triangle, diamond, pentagon, hexagon, star and more, plus line (`I`), arrow (`A`) and double arrow, all with live preview |
 | **Flowchart tools** | Process (`P`), decision (`D`), start / end (`G`), data, document, database and other nodes: drag to size, then type a centred, auto-wrapped label |
 | **Snapping connectors** | Connector arrows (`C`) attach to boxes and follow them when they move |
-| **Select & move** | Click to select (`V`), drag to move, resize boxes by their corners, double-click a box to edit its label, `Delete` to remove |
-| **Lasso select** | Circle several elements to select and move them together (`L`) |
+| **Select & move** | Click or tap to select (`V`), drag to move, resize boxes by their corners, double-click a box to edit its label, `Delete` to remove |
+| **Lasso select** | Circle several elements (`L`) to select them; a frame appears round the group. Drag inside it to move, drag a corner to scale everything together, handwriting included |
+| **Selection action bar** | A floating bar beside the selection for touch and stylus (iPad): six quick colours, Smaller, Bigger and Delete, so no keyboard is needed |
 | **Eraser with size ring** | A circle cursor shows the exact eraser size as you erase (`E`) |
 | **Shape rail** | Every shape and flowchart element sits in a rail on the left (a scrolling row on a phone). Tap one to pick the tool, or drag it onto the board to drop a ready-made shape |
 | **Live session** | Start a session on the classroom PC, scan the QR code with an iPad (or enter the 6-character code) and both devices share one board in real time. Draw on the iPad and it appears on the projector |

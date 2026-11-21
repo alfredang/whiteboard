@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Whiteboard">
   <meta name="theme-color" content="#141418">
   <title>Whiteboard</title>
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
   <header>
@@ -28,7 +28,7 @@
     <div class="toolbar">
       <!-- Core tools -->
       <div class="toolbar-group">
-        <button class="tool-btn" id="btnSelect" title="Select / Move — drag boxes, double-click to edit (V)">
+        <button class="tool-btn" id="btnSelect" title="Select / Move — tap an item, then drag, resize, recolour or delete it (V)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 3l7.5 18 2.6-7.9L21 10.5 3 3z"/>
           </svg>
@@ -52,7 +52,7 @@
             <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/>
           </svg>
         </button>
-        <button class="tool-btn" id="btnLasso" title="Lasso Select — circle elements to select them (L)">
+        <button class="tool-btn" id="btnLasso" title="Lasso Select — circle items, then drag, resize, recolour or delete them (L)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M7 22a5 5 0 0 1-2-4"/>
             <path d="M3.3 14A6.8 6.8 0 0 1 2 10c0-4.4 4.5-8 10-8s10 3.6 10 8-4.5 8-10 8a12 12 0 0 1-5-1"/>
@@ -349,6 +349,8 @@
     <textarea id="shapeTextEditor" class="shape-text-editor" spellcheck="false"
               placeholder="Type label… (Enter to confirm)"></textarea>
     <div id="eraserCursor" class="eraser-ring"></div>
+    <!-- Actions for the current selection (colour, size, delete). Filled by JS. -->
+    <div id="selBar" class="sel-bar" role="toolbar" aria-label="Selection"></div>
   </div>
   </div>
 
@@ -361,7 +363,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
-  <script src="whiteboard.js?v=21"></script>
+  <script src="whiteboard.js?v=22"></script>
   <script src="live.js?v=3"></script>
 </body>
 </html>

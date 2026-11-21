@@ -972,6 +972,76 @@ canvas.pen-cursor {
   display: block;
 }
 
+/* ─── Selection action bar ─── */
+.sel-bar {
+  position: absolute;
+  z-index: 45;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-focus);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sel-bar.visible { display: flex; }
+
+.sel-bar button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sel-bar button:active { background: var(--bg-hover); }
+.sel-bar .sel-btn svg { width: 19px; height: 19px; }
+.sel-bar .sel-btn.danger { color: var(--danger); }
+.sel-bar .sel-btn.danger:active { background: var(--danger-soft); }
+
+.sel-bar .sel-color span {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.sel-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 3px;
+  background: var(--border-focus);
+}
+
+@media (hover: hover) {
+  .sel-bar button:hover { background: var(--bg-hover); }
+  .sel-bar .sel-btn.danger:hover { background: var(--danger-soft); }
+}
+
+@media (pointer: coarse) {
+  .sel-bar button { width: 42px; height: 42px; }
+  .sel-bar .sel-color span { width: 26px; height: 26px; }
+  .sel-bar .sel-btn svg { width: 22px; height: 22px; }
+}
+
+@media (max-width: 520px) {
+  .sel-bar { gap: 1px; padding: 4px; }
+  .sel-bar button { width: 36px; height: 36px; }
+  .sel-divider { margin: 0 1px; }
+}
+
 .shape-text-editor::placeholder {
   color: var(--text-muted);
   font-weight: 400;
