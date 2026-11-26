@@ -342,8 +342,21 @@
   </div>
 
   <div class="workspace">
-  <!-- Shape rail: tap a shape to pick it, or drag it onto the board. Filled by JS. -->
-  <aside class="shape-rail" id="shapeRail" aria-label="Shapes"></aside>
+  <!-- Shape rail: tap a shape to pick it, or drag it onto the board. Filled by JS.
+       Starts collapsed to its toggle button; the button expands and collapses it. -->
+  <aside class="shape-rail collapsed" id="shapeRail" aria-label="Shapes">
+    <button class="tool-btn rail-toggle" id="railToggle" type="button" aria-expanded="false" aria-controls="shapeRail" title="Show shapes">
+      <svg class="rail-toggle-shapes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="8" height="8" rx="1"/>
+        <circle cx="17" cy="7" r="4"/>
+        <path d="M12 21l5-8 5 8z"/>
+        <path d="M3 15h8v6H3z"/>
+      </svg>
+      <svg class="rail-toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m9 6 6 6-6 6"/>
+      </svg>
+    </button>
+  </aside>
   <div class="canvas-container">
     <canvas id="whiteboard" width="1200" height="700"></canvas>
     <textarea id="shapeTextEditor" class="shape-text-editor" spellcheck="false"
@@ -352,6 +365,21 @@
     <!-- Actions for the current selection (colour, size, delete). Filled by JS. -->
     <div id="selBar" class="sel-bar" role="toolbar" aria-label="Selection"></div>
   </div>
+  <!-- Right rail: flowchart elements (tap or drag onto the board) and colours for
+       the pen and the selection. Filled by JS. Starts collapsed to its toggle button. -->
+  <aside class="shape-rail color-rail collapsed" id="colorRail" aria-label="Flowchart and colours">
+    <button class="tool-btn rail-toggle" id="colorRailToggle" type="button" aria-expanded="false" aria-controls="colorRail" title="Show flowchart and colours">
+      <svg class="rail-toggle-shapes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22a10 10 0 1 1 10-10c0 2.2-1.8 3.5-4 3.5h-2a2 2 0 0 0-1.5 3.3A2 2 0 0 1 12 22Z"/>
+        <circle cx="7.5" cy="11" r="1.3" fill="currentColor"/>
+        <circle cx="10.5" cy="6.8" r="1.3" fill="currentColor"/>
+        <circle cx="15.5" cy="7.5" r="1.3" fill="currentColor"/>
+      </svg>
+      <svg class="rail-toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m9 6 6 6-6 6"/>
+      </svg>
+    </button>
+  </aside>
   </div>
 
   <div class="status-bar">

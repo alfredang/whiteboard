@@ -1474,8 +1474,65 @@ canvas.drop-target {
     0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
+/* Collapse / expand toggle at the head of the rail. Collapsed, the rail is
+   just this button (a shapes icon + an arrow pointing the way it opens). */
+.rail-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  align-self: flex-start;
+}
+
+.rail-toggle .rail-toggle-chevron {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 14px;
+  height: 14px;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  transition: transform 0.2s ease;
+}
+
+.shape-rail:not(.collapsed) .rail-toggle-chevron { transform: rotate(180deg); }
+
+.shape-rail.collapsed .rail-group { display: none; }
+
+/* Colour rail: the shape rail's twin on the right edge of the board */
+.color-rail {
+  border-right: none;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.color-rail .rail-toggle { align-self: flex-end; }
+
+/* It opens to the left, so its arrow points the other way */
+.color-rail .rail-toggle-chevron { transform: rotate(180deg); }
+.color-rail:not(.collapsed) .rail-toggle-chevron { transform: none; }
+
+/* Three flowchart columns and four colour columns keep it short enough to
+   show everything without scrolling on a laptop or iPad. */
+.color-rail .rail-grid { grid-template-columns: repeat(3, 40px); }
+
+.color-rail .color-grid {
+  grid-template-columns: repeat(4, 26px);
+  gap: 8px;
+  padding: 2px;
+}
+
+.color-rail .swatch {
+  width: 26px;
+  height: 26px;
+}
+
 @media (pointer: coarse) {
+  .rail-toggle { width: 44px; height: 44px; }
   .rail-grid { grid-template-columns: repeat(2, 44px); }
+  .color-rail .rail-grid { grid-template-columns: repeat(3, 44px); }
+  .color-rail .color-grid { grid-template-columns: repeat(4, 30px); gap: 7px; }
+  .color-rail .swatch { width: 30px; height: 30px; min-width: 0; min-height: 0; }
   .shape-rail .palette-item { width: 44px; height: 44px; }
 }
 
@@ -1508,4 +1565,22 @@ canvas.drop-target {
   }
 
   .shape-rail .palette-item { flex-shrink: 0; }
+
+  .rail-toggle { align-self: center; }
+
+  /* In the row the rail opens downward from the toggle */
+  .rail-toggle .rail-toggle-chevron { transform: rotate(90deg); }
+  .shape-rail:not(.collapsed) .rail-toggle-chevron { transform: rotate(-90deg); }
+
+  /* The colour rail is a row below the board and opens upward */
+  .color-rail {
+    border-left: none;
+    border-bottom: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .color-rail .rail-toggle { align-self: center; }
+  .color-rail .rail-toggle-chevron { transform: rotate(-90deg); }
+  .color-rail:not(.collapsed) .rail-toggle-chevron { transform: rotate(90deg); }
+  .color-rail .color-grid { gap: 8px; align-items: center; }
+  .color-rail .swatch { flex-shrink: 0; }
 }

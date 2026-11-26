@@ -1257,6 +1257,11 @@ function setTool(tool) {
   // NB: coerce to a real boolean — classList.toggle(class, undefined) *flips*
   // the class instead of removing it, which would leave triggers stuck "on".
   btnShapes.classList.toggle('active', !!def && def.menu === 'shapes');
+  // A collapsed rail's toggle lights up while one of its tools is in use.
+  const shapeToggle = document.getElementById('railToggle');
+  if (shapeToggle) shapeToggle.classList.toggle('active', !!def && def.menu === 'shapes');
+  const flowToggle = document.getElementById('colorRailToggle');
+  if (flowToggle) flowToggle.classList.toggle('active', !!def && def.menu === 'process');
   btnProcess.classList.toggle('active', !!def && def.menu === 'process');
   document.querySelectorAll('.palette-item').forEach(el => {
     el.classList.toggle('active', el.dataset.tool === tool);
@@ -1334,13 +1339,15 @@ dropdowns.forEach(dd => {
   });
 });
 
-// ─── Shape rail ───
-// Every shape and flowchart element, laid out down the left edge (along the
-// top on a phone). The items are copies of the dropdown palette buttons, so a
-// tap picks the tool exactly as the dropdown did; dragging one onto the board
-// drops a ready-made shape there.
+// ─── Side rails ───
+// Shapes down the left edge, flowchart elements (and colours, added below)
+// down the right; on a phone they are rows above and below the board. The
+// items are copies of the dropdown palette buttons, so a tap picks the tool
+// exactly as the dropdown did; dragging one onto the board drops a ready-made
+// shape there.
 const shapeRail = document.getElementById('shapeRail');
-[['shapePanel', 'Shapes'], ['processPanel', 'Flowchart']].forEach(([panelId, title]) => {
+const colorRail = document.getElementById('colorRail');
+[['shapePanel', 'Shapes', shapeRail], ['processPanel', 'Flowchart', colorRail]].forEach(([panelId, title, rail]) => {
   const group = document.createElement('div');
   group.className = 'rail-group';
   const label = document.createElement('div');
@@ -1354,8 +1361,25 @@ const shapeRail = document.getElementById('shapeRail');
     grid.appendChild(copy);
   });
   group.append(label, grid);
-  shapeRail.appendChild(group);
+  rail.appendChild(group);
 });
+
+// Collapse / expand a side rail (shapes on the left; flowchart and colours on
+// the right).
+// Both start collapsed on every load; the board is resized to the space the
+// rails leave.
+function wireRailToggle(rail, toggle, what) {
+  toggle.addEventListener('click', () => {
+    const collapsed = rail.classList.toggle('collapsed');
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    toggle.title = (collapsed ? 'Show ' : 'Hide ') + what;
+    if (editing) commitTextEditor();
+    resizeCanvas();
+    updateSelBar();
+  });
+}
+wireRailToggle(shapeRail, document.getElementById('railToggle'), 'shapes');
+
 
 // Drop a default-sized shape centred on a board position.
 const ROUND_TYPES = ['circle', 'triangle', 'righttriangle', 'diamond', 'pentagon', 'hexagon', 'star'];
@@ -1403,7 +1427,7 @@ function placeShape(tool, pos) {
 // a move across it (or out of it) picks the shape up.
 let railDrag = null;
 let railSuppressClick = false;
-function railIsRow() { return getComputedStyle(shapeRail).flexDirection === 'row'; }
+function railIsRow(rail) { return getComputedStyle(rail).flexDirection === 'row'; }
 function railOverCanvas(e) {
   const r = canvas.getBoundingClientRect();
   return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
@@ -1424,54 +1448,56 @@ function railEnd() {
   canvas.classList.remove('drop-target');
   railDrag = null;
 }
-shapeRail.addEventListener('pointerdown', (e) => {
-  const item = e.target.closest('.palette-item');
-  if (!item || railDrag || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  railSuppressClick = false;
-  railDrag = { item, tool: item.dataset.tool, id: e.pointerId, x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, mode: null, ghost: null };
-  try { item.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
-});
-shapeRail.addEventListener('pointermove', (e) => {
-  const d = railDrag;
-  if (!d || e.pointerId !== d.id) return;
-  if (!d.mode) {
-    const dx = Math.abs(e.clientX - d.x0), dy = Math.abs(e.clientY - d.y0);
-    if (Math.hypot(dx, dy) < 8) return;
-    const row = railIsRow();
-    const canScroll = row ? shapeRail.scrollWidth > shapeRail.clientWidth : shapeRail.scrollHeight > shapeRail.clientHeight;
-    const along = row ? dx : dy, across = row ? dy : dx;
-    if (e.pointerType !== 'mouse' && canScroll && along > across) d.mode = 'scroll';
-    else railPickUp(d);
-  }
-  if (d.mode === 'scroll') {
-    if (railIsRow()) shapeRail.scrollLeft -= e.clientX - d.lx;
-    else shapeRail.scrollTop -= e.clientY - d.ly;
-    const r = shapeRail.getBoundingClientRect();
-    if (e.clientX < r.left - 12 || e.clientX > r.right + 12 || e.clientY < r.top - 12 || e.clientY > r.bottom + 12) railPickUp(d);
-  }
-  if (d.mode === 'drag') {
+[shapeRail, colorRail].forEach(rail => {
+  rail.addEventListener('pointerdown', (e) => {
+    const item = e.target.closest('.palette-item');
+    if (!item || railDrag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    railSuppressClick = false;
+    railDrag = { rail, item, tool: item.dataset.tool, id: e.pointerId, x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, mode: null, ghost: null };
+    try { item.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
+  });
+  rail.addEventListener('pointermove', (e) => {
+    const d = railDrag;
+    if (!d || d.rail !== rail || e.pointerId !== d.id) return;
+    if (!d.mode) {
+      const dx = Math.abs(e.clientX - d.x0), dy = Math.abs(e.clientY - d.y0);
+      if (Math.hypot(dx, dy) < 8) return;
+      const row = railIsRow(rail);
+      const canScroll = row ? rail.scrollWidth > rail.clientWidth : rail.scrollHeight > rail.clientHeight;
+      const along = row ? dx : dy, across = row ? dy : dx;
+      if (e.pointerType !== 'mouse' && canScroll && along > across) d.mode = 'scroll';
+      else railPickUp(d);
+    }
+    if (d.mode === 'scroll') {
+      if (railIsRow(rail)) rail.scrollLeft -= e.clientX - d.lx;
+      else rail.scrollTop -= e.clientY - d.ly;
+      const r = rail.getBoundingClientRect();
+      if (e.clientX < r.left - 12 || e.clientX > r.right + 12 || e.clientY < r.top - 12 || e.clientY > r.bottom + 12) railPickUp(d);
+    }
+    if (d.mode === 'drag') {
+      e.preventDefault();
+      d.ghost.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+      canvas.classList.toggle('drop-target', railOverCanvas(e));
+    }
+    d.lx = e.clientX; d.ly = e.clientY;
+  });
+  rail.addEventListener('pointerup', (e) => {
+    const d = railDrag;
+    if (!d || d.rail !== rail || e.pointerId !== d.id) return;
+    const mode = d.mode, tool = d.tool;
+    const drop = mode === 'drag' && railOverCanvas(e) ? getPosition(e) : null;
+    railEnd();
+    if (mode) railSuppressClick = true;   // it was a drag or a scroll, not a tap
+    if (drop) placeShape(tool, drop);
+  });
+  rail.addEventListener('pointercancel', railEnd);
+  rail.addEventListener('click', (e) => {
+    if (!railSuppressClick) return;
+    railSuppressClick = false;
+    e.stopPropagation();
     e.preventDefault();
-    d.ghost.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
-    canvas.classList.toggle('drop-target', railOverCanvas(e));
-  }
-  d.lx = e.clientX; d.ly = e.clientY;
+  }, true);
 });
-shapeRail.addEventListener('pointerup', (e) => {
-  const d = railDrag;
-  if (!d || e.pointerId !== d.id) return;
-  const mode = d.mode, tool = d.tool;
-  const drop = mode === 'drag' && railOverCanvas(e) ? getPosition(e) : null;
-  railEnd();
-  if (mode) railSuppressClick = true;   // it was a drag or a scroll, not a tap
-  if (drop) placeShape(tool, drop);
-});
-shapeRail.addEventListener('pointercancel', railEnd);
-shapeRail.addEventListener('click', (e) => {
-  if (!railSuppressClick) return;
-  railSuppressClick = false;
-  e.stopPropagation();
-  e.preventDefault();
-}, true);
 
 // Pick a shape/process tool from a palette and remember it on the trigger icon.
 document.querySelectorAll('.palette-item').forEach(item => {
@@ -1634,6 +1660,34 @@ function buildPalette() {
     swatchGrid.appendChild(sw);
   });
 }
+
+// ─── Colour rail ───
+// The palette's colours in the right rail, under the flowchart elements.
+// A tap sets the pen colour and recolours the selection, like the palette.
+(() => {
+  const group = document.createElement('div');
+  group.className = 'rail-group';
+  const label = document.createElement('div');
+  label.className = 'palette-title';
+  label.textContent = 'Colours';
+  const grid = document.createElement('div');
+  grid.className = 'rail-grid color-grid';
+  PALETTE.forEach(hex => {
+    const sw = document.createElement('button');
+    sw.type = 'button';
+    sw.className = 'swatch';
+    sw.dataset.color = hex;
+    sw.style.background = hex;
+    sw.title = hex;
+    sw.addEventListener('click', () => applyColor(hex));
+    grid.appendChild(sw);
+  });
+  group.append(label, grid);
+  colorRail.appendChild(group);
+  // Mark the current colour now that these swatches exist.
+  setColor(colorPicker.value);
+})();
+wireRailToggle(colorRail, document.getElementById('colorRailToggle'), 'flowchart and colours');
 
 // Apply a colour to the pen and to every selected shape.
 function applyColor(hex) {
