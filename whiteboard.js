@@ -2643,16 +2643,26 @@ btnFinger.addEventListener('click', () => {
   showToast(fingerDraw ? 'Finger drawing on' : 'Stylus only');
 });
 
-// While fingers are not drawing, a finger double-tap on the board switches to
-// the next pen colour, so the hand holding the stylus never leaves the page.
+// While fingers are not drawing, finger taps on the board change the pen
+// without the hand holding the stylus leaving the page:
+//   • double-tap — switch to the next pen colour;
+//   • triple-tap — back to the pen in black (the board's default ink).
+// The double-tap waits one tap-gap to see whether a third tap follows.
 // (A web page cannot see the double-tap on the barrel of an Apple Pencil.)
 const TAP_MS = 250;        // a tap is down and up within this
-const DOUBLE_TAP_MS = 400; // gap allowed between the two taps
+const DOUBLE_TAP_MS = 400; // gap allowed between taps in one sequence
 const TAP_SLOP = 30;       // screen px the taps may differ by
 let tapDown = null;        // finger currently down: { id, x, y, t }
-let lastTap = null;        // last completed tap: { x, y, t }
+let lastTap = null;        // last tap of the sequence: { x, y, t, n }
+let tapTimer = null;       // pending double-tap action
 function fingerTapDown(e) {
   tapDown = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
+}
+function resetTaps() { lastTap = null; clearTimeout(tapTimer); tapTimer = null; }
+function defaultPen() {
+  setTool('pen');
+  applyColor(tpl().ink);
+  showToast(tpl().dark ? 'Pen: chalk (default ink)' : 'Pen: black');
 }
 canvas.addEventListener('pointerup', (e) => {
   if (!tapDown || e.pointerId !== tapDown.id) return;
@@ -2660,15 +2670,19 @@ canvas.addEventListener('pointerup', (e) => {
   const d = tapDown;
   tapDown = null;
   // A resting palm stays down or slides; only a quick, still touch is a tap.
-  if (now - d.t > TAP_MS || Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_SLOP) { lastTap = null; return; }
-  if (isDrawing) { lastTap = null; return; }
-  if (lastTap && now - lastTap.t < DOUBLE_TAP_MS && Math.hypot(d.x - lastTap.x, d.y - lastTap.y) < TAP_SLOP) {
-    lastTap = null;
-    if (boxAt(getPosition(e), 0)) return; // double-tap on a box edits its label instead
-    cyclePenColor(1);
+  if (now - d.t > TAP_MS || Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_SLOP) { resetTaps(); return; }
+  if (isDrawing) { resetTaps(); return; }
+  const chained = lastTap && now - lastTap.t < DOUBLE_TAP_MS && Math.hypot(d.x - lastTap.x, d.y - lastTap.y) < TAP_SLOP;
+  const n = chained ? lastTap.n + 1 : 1;
+  clearTimeout(tapTimer); tapTimer = null;
+  if (n === 2) {
+    if (boxAt(getPosition(e), 0)) { resetTaps(); return; } // double-tap on a box edits its label instead
+    lastTap = { x: d.x, y: d.y, t: now, n };
+    tapTimer = setTimeout(() => { resetTaps(); cyclePenColor(1); }, DOUBLE_TAP_MS);
     return;
   }
-  lastTap = { x: d.x, y: d.y, t: now };
+  if (n >= 3) { resetTaps(); defaultPen(); return; }
+  lastTap = { x: d.x, y: d.y, t: now, n };
 });
 canvas.addEventListener('pointercancel', (e) => { if (tapDown && e.pointerId === tapDown.id) tapDown = null; });
 
@@ -2698,7 +2712,7 @@ canvas.addEventListener('pointerdown', (e) => {
     if (!stylusSeen) {
       stylusSeen = true;
       syncFingerBtn();
-      showToast('Stylus detected: palm is ignored. Double-tap with a finger to change colour');
+      showToast('Stylus detected: palm is ignored. Finger double-tap: next colour; triple-tap: black pen');
     }
     if (activePointer !== null && activeType === 'touch') abortDraw();
   } else if (e.pointerType === 'touch' && stylusSeen && !fingerDraw) {
