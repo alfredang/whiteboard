@@ -2702,9 +2702,12 @@ document.addEventListener('selectionchange', () => {
 });
 
 // Palm rejection. Once a stylus has touched the board the app is Pencil-only:
-// fingers and the palm do nothing anywhere (a resting palm is a finger as far
-// as the browser can tell). The hand button that appears in the toolbar turns
-// finger use back on. The device is remembered, so after a reload the palm is
+// only the Pencil writes on the board. Fingers still press the toolbar, the
+// page strip, the rails and the selection bar, and on the board they use
+// gestures (swipe to turn the page, double-tap for the next colour, triple-tap
+// for black). A touch while the Pencil is down or just after it lifts is the
+// palm and does nothing. The hand button that appears in the toolbar turns
+// finger drawing on. The device is remembered, so after a reload the palm is
 // ignored from the first stroke.
 const STYLUS_KEY = 'whiteboard-stylus';
 const FINGER_KEY = 'whiteboard-finger-draw';
@@ -2718,22 +2721,71 @@ try {
   stylusSeen = stylusSeen || localStorage.getItem(STYLUS_KEY) === '1';
   fingerDraw = localStorage.getItem(FINGER_KEY) === '1';
 } catch { /* storage unavailable */ }
-let fingerHintShown = false; // the "Pencil only" hint, once per visit
+let fingerHintShown = false; // the finger-gesture hint, once per visit
+const GESTURE_HINT = 'Only the Pencil writes. Fingers: swipe to turn pages, double-tap for the next colour, triple-tap for black';
 const btnFinger = document.getElementById('btnFinger');
 function syncFingerBtn() {
   btnFinger.hidden = !stylusSeen;
   btnFinger.classList.toggle('active', fingerDraw);
   btnFinger.title = fingerDraw
-    ? 'Fingers are on: they draw and press buttons. Tap for Pencil only (palm rejection)'
-    : 'Pencil only: fingers and palm are ignored. Tap to use fingers too';
+    ? 'Finger drawing is on. Tap for Pencil only (palm rejection, finger gestures)'
+    : 'Pencil only: fingers press buttons and use gestures, the palm is ignored. Tap to draw with a finger too';
 }
 btnFinger.addEventListener('click', () => {
   fingerDraw = !fingerDraw;
   try { localStorage.setItem(FINGER_KEY, fingerDraw ? '1' : '0'); } catch { /* ignore */ }
   syncFingerBtn();
-  showToast(fingerDraw ? 'Fingers on: they draw and press buttons' : 'Pencil only: fingers and palm are ignored');
+  resetTaps();
+  showToast(fingerDraw ? 'Finger drawing on' : GESTURE_HINT);
 });
 syncFingerBtn();
+
+// ─── Finger gestures on the board (Pencil-only mode) ───
+//   • swipe left / right — next / previous page;
+//   • double-tap — the next pen colour;
+//   • triple-tap — back to the pen in black (the board's default ink).
+// The double-tap waits one tap-gap to see whether a third tap follows.
+// (A web page cannot see the double-tap on the barrel of an Apple Pencil.)
+const TAP_MS = 250;        // a tap is down and up within this
+const DOUBLE_TAP_MS = 400; // gap allowed between taps in one sequence
+const TAP_SLOP = 24;       // screen px a tap may move, and the taps may differ by
+const SWIPE_PX = 80;       // a swipe travels at least this far sideways…
+const SWIPE_MS = 700;      // …within this time, and mostly sideways
+let lastTap = null;        // last tap of the sequence: { x, y, t, n }
+let tapTimer = null;       // pending double-tap action
+function resetTaps() { lastTap = null; clearTimeout(tapTimer); tapTimer = null; }
+function defaultPen() {
+  setTool('pen');
+  applyColor(tpl().ink);
+  showToast(tpl().dark ? 'Pen: chalk (default ink)' : 'Pen: black');
+}
+function turnPage(dir) {
+  const to = currentPage + dir;
+  if (to < 0) { showToast('This is the first page'); return; }
+  if (to >= pages.length) { showToast('Last page: tap + to add one'); return; }
+  switchPage(to);
+  showToast(`Page ${to + 1} of ${pages.length}`);
+}
+function fingerTap(x, y, now) {
+  const chained = lastTap && now - lastTap.t < DOUBLE_TAP_MS && Math.hypot(x - lastTap.x, y - lastTap.y) < TAP_SLOP * 2;
+  const n = chained ? lastTap.n + 1 : 1;
+  clearTimeout(tapTimer); tapTimer = null;
+  if (n >= 3) { resetTaps(); defaultPen(); return; }
+  lastTap = { x, y, t: now, n };
+  if (n === 2) tapTimer = setTimeout(() => { resetTaps(); cyclePenColor(1); }, DOUBLE_TAP_MS);
+}
+// g: { x, y, t, reach } recorded when the finger landed; e: its pointerup.
+function fingerGesture(g, e) {
+  const now = performance.now();
+  const dx = e.clientX - g.x, dy = e.clientY - g.y;
+  if (Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > 2 * Math.abs(dy) && now - g.t <= SWIPE_MS) {
+    resetTaps();
+    turnPage(dx < 0 ? 1 : -1); // finger moves left: the next page comes in from the right
+    return;
+  }
+  if (now - g.t <= TAP_MS && g.reach <= TAP_SLOP) fingerTap(e.clientX, e.clientY, now);
+  else resetTaps();
+}
 
 // Throw away whatever the active pointer was doing (a palm that landed just
 // before the stylus) without committing it.
@@ -2759,14 +2811,16 @@ function abortDraw() {
 // ─── Palm guard (whole page) ───
 // The hand that holds the stylus rests on the screen, and that palm reaches
 // the toolbar, the page strip, the rails and the selection bar as well as the
-// board. In Pencil-only mode every touch is ignored: it never draws, presses
-// a button, switches a page or drags from a rail; only the Pencil does.
-// With fingers on (hand button), a touch still counts as palm when
+// board. A touch counts as palm, and does nothing at all, when
 //   • it lands while the stylus is down, or shortly after it lifts;
 //   • the stylus lands while it is down (a palm that got there first);
 //   • on the board, its contact area is palm-sized (where the browser reports
 //     one). Not used on the controls: iPad Safari reports a contact box of
-//     twice the touch radius, so a firm fingertip already measures 60–80 px.
+//     twice the touch radius, so a firm fingertip already measures 60–80 px;
+//   • in Pencil-only mode, it lands on the board while another touch is
+//     there (a palm is several contacts; it also ends any gesture).
+// Any other touch works the controls. On the board, in Pencil-only mode it
+// never draws: it is read as a gesture (swipe, double- or triple-tap).
 // Listeners on window, capture phase: they run before every other handler.
 const PALM_SETTLE_MS = 1000; // after the stylus lifts, a new touch on the board is still the palm
 const PALM_SETTLE_UI_MS = 500; // …and on a button: a shorter wait, so a finger can reach for a control
@@ -2774,14 +2828,15 @@ const PALM_SIZE = 150;       // CSS px: a contact this wide is a palm (a fingert
 const PALM_CLICK_MS = 1000;  // how long after a palm lifts its click is swallowed
 let stylusDown = false;
 let stylusUpAt = -Infinity;
-const touchesDown = new Map(); // touch pointerId -> { palm, board }
+const touchesDown = new Map(); // touch pointerId -> { palm, board, gesture }
 let lastUp = null;             // { palm, t } of the last pointer to lift (its click follows)
 function stylusMode() { return stylusSeen && !fingerDraw; }
 function stylusRecent(ms = PALM_SETTLE_MS) { return stylusDown || performance.now() - stylusUpAt < ms; }
 function palmSized(e) { return Math.max(e.width || 0, e.height || 0) >= PALM_SIZE; }
 // Everything a touch has started is dropped once it turns out to be a palm.
 function dropPalmTouches() {
-  touchesDown.forEach(t => { t.palm = true; });
+  touchesDown.forEach(t => { t.palm = true; t.gesture = null; });
+  resetTaps();
   if (railDrag && railDrag.id !== stylusPointerId) railEnd();
   if (activePointer !== null && activeType === 'touch') abortDraw();
 }
@@ -2791,7 +2846,8 @@ function noteStylus() {
   stylusSeen = true;
   try { localStorage.setItem(STYLUS_KEY, '1'); } catch { /* ignore */ }
   syncFingerBtn();
-  showToast('Pencil detected: only the Pencil draws and presses buttons. The hand button turns fingers on');
+  fingerHintShown = true;
+  showToast('Pencil detected: palm is ignored. ' + GESTURE_HINT);
 }
 window.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'pen') {
@@ -2803,16 +2859,21 @@ window.addEventListener('pointerdown', (e) => {
   }
   if (e.pointerType !== 'touch') return;
   const board = e.target === canvas;
-  if (stylusMode() && !fingerHintShown && !stylusRecent()) {
-    // A deliberate touch (not the writing hand): say once why nothing happens.
-    fingerHintShown = true;
-    showToast('Pencil only: fingers and palm are ignored. Tap the hand button with the Pencil to use fingers');
-  }
-  const palm = stylusMode()
-    || (stylusSeen && stylusRecent(board ? PALM_SETTLE_MS : PALM_SETTLE_UI_MS))
+  let palm = (stylusSeen && stylusRecent(board ? PALM_SETTLE_MS : PALM_SETTLE_UI_MS))
     || (board && palmSized(e));
-  touchesDown.set(e.pointerId, { palm, board });
-  if (palm) { e.stopPropagation(); e.preventDefault(); }
+  let gesture = null;
+  if (board && stylusMode()) {
+    let crowd = false;
+    touchesDown.forEach(t => { if (t.board) { crowd = true; t.palm = true; t.gesture = null; } });
+    if (crowd) { palm = true; resetTaps(); }
+    if (!palm) {
+      gesture = { x: e.clientX, y: e.clientY, t: performance.now(), reach: 0 };
+      if (!fingerHintShown) { fingerHintShown = true; showToast(GESTURE_HINT); }
+    }
+  }
+  touchesDown.set(e.pointerId, { palm, board, gesture });
+  // A palm does nothing; a gesture finger never reaches the drawing code.
+  if (palm || gesture) { e.stopPropagation(); e.preventDefault(); }
 }, true);
 window.addEventListener('pointermove', (e) => {
   if (e.pointerType !== 'touch') return;
@@ -2821,9 +2882,15 @@ window.addEventListener('pointermove', (e) => {
   // A palm often lands small and spreads as it settles.
   if (!t.palm && t.board && palmSized(e)) {
     t.palm = true;
+    t.gesture = null;
+    resetTaps();
     if (activePointer === e.pointerId) abortDraw();
   }
-  if (t.palm) e.stopPropagation();
+  if (t.gesture) {
+    t.gesture.reach = Math.max(t.gesture.reach, Math.hypot(e.clientX - t.gesture.x, e.clientY - t.gesture.y));
+    e.stopPropagation();
+    e.preventDefault();
+  } else if (t.palm) e.stopPropagation();
 }, true);
 function palmUp(e) {
   if (e.pointerType === 'pen') {
@@ -2833,13 +2900,23 @@ function palmUp(e) {
   }
   const t = e.pointerType === 'touch' ? touchesDown.get(e.pointerId) : null;
   if (t) touchesDown.delete(e.pointerId);
-  lastUp = { palm: !!(t && t.palm), t: performance.now() };
+  if (t && t.gesture && !t.palm) {
+    e.stopPropagation();
+    if (e.type === 'pointerup') fingerGesture(t.gesture, e);
+    else resetTaps();
+  }
+  // The click (or double-click) a palm or a gesture finger would make is swallowed.
+  lastUp = { palm: !!(t && (t.palm || t.gesture)), t: performance.now() };
 }
 window.addEventListener('pointerup', palmUp, true);
 window.addEventListener('pointercancel', palmUp, true);
 // A browser can skip a touch's pointerup (a system gesture, the app losing
 // focus); a touch list that empties says every contact really has lifted.
-function clearTouches(e) { if (!e || !e.touches || e.touches.length === 0) touchesDown.clear(); }
+// Deferred, so a pointerup that comes after the touchend still finds its touch.
+function clearTouches(e) {
+  if (e && e.touches && e.touches.length) return;
+  setTimeout(() => { if (!e || !e.touches || e.touches.length === 0) touchesDown.clear(); }, 0);
+}
 window.addEventListener('touchend', clearTouches, true);
 window.addEventListener('touchcancel', clearTouches, true);
 window.addEventListener('blur', () => { touchesDown.clear(); stylusDown = false; });
@@ -2848,7 +2925,6 @@ window.addEventListener('blur', () => { touchesDown.clear(); stylusDown = false;
 function swallowPalmClick(e) {
   const up = lastUp;
   if (!up || !up.palm || performance.now() - up.t > PALM_CLICK_MS) return;
-  if (e.type === 'click') lastUp = null;
   e.stopPropagation();
   e.preventDefault();
 }
@@ -2861,7 +2937,7 @@ window.addEventListener('contextmenu', (e) => {
 
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'pen' && activePointer !== null && activeType === 'touch') abortDraw();
-  if (e.pointerType === 'touch' && stylusMode()) return; // the palm guard already stops these
+  if (e.pointerType === 'touch' && stylusMode()) return; // gestures only: the palm guard already stops these
   // Finger drawing: a second touch during a finger stroke means a palm (or a
   // pinch) is on the board, so the stroke is dropped rather than kept.
   if (e.pointerType === 'touch' && activePointer !== null && activeType === 'touch') { abortDraw(); return; }
