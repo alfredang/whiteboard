@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Whiteboard">
   <meta name="theme-color" content="#141418">
   <title>Whiteboard</title>
-  <link rel="stylesheet" href="styles.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=11">
 </head>
 <body>
   <header>
@@ -202,24 +202,52 @@
 
       <div class="toolbar-divider"></div>
 
-      <!-- Brush / Eraser size -->
-      <div class="size-control">
-        <span class="size-label" id="sizeLabel">Pen</span>
-        <input type="range" id="brushSize" min="1" max="50" value="4" title="Size">
-        <span class="size-value" id="sizeValue">4px</span>
+      <!-- Fill colour (boxes, circles, flowchart shapes) -->
+      <div class="toolbar-group">
+        <div class="dropdown" id="ddFill">
+          <button class="tool-btn dropdown-trigger fill-trigger" id="btnFill" title="Fill colour for shapes: new shapes and the selection">
+            <svg class="trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 11 12 4l7 7-7 7z"/><path d="M5 11h14"/><path d="M20 15s1.5 2 1.5 3a1.5 1.5 0 0 1-3 0c0-1 1.5-3 1.5-3z"/>
+            </svg>
+            <span class="fill-swatch none" id="fillSwatch"></span>
+            <span class="caret"></span>
+          </button>
+          <div class="dropdown-panel color-panel fill-panel" id="fillPanel">
+            <div class="palette-title">Shape fill</div>
+            <div class="swatch-grid" id="fillGrid"></div>
+            <div class="custom-color-row">
+              <span class="custom-color-label">Custom fill…</span>
+              <label class="custom-color-wheel" title="Custom fill">
+                <input type="color" id="fillPicker" value="#fff3a3">
+              </label>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="toolbar-divider"></div>
 
-      <!-- Pen smoothing (stroke stabiliser) -->
+      <!-- Brush type (pen) -->
+      <div class="toolbar-group">
+        <div class="dropdown" id="ddBrush">
+          <button class="tool-btn dropdown-trigger brush-trigger" id="btnBrush" title="Brush: ball pen, pencils, marker, highlighter…">
+            <span class="brush-name" id="brushName">Ball pen</span>
+            <span class="caret"></span>
+          </button>
+          <div class="dropdown-panel template-panel brush-panel" id="brushPanel">
+            <div class="palette-title">Brush</div>
+            <div id="brushList"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <!-- Brush / Eraser size -->
       <div class="size-control">
-        <span class="size-label">Smooth</span>
-        <select id="smoothLevel" class="smooth-select" title="Pen smoothing — steadies shaky mouse strokes">
-          <option value="off">Off</option>
-          <option value="low">Low</option>
-          <option value="medium" selected>Medium</option>
-          <option value="high">High</option>
-        </select>
+        <span class="size-label" id="sizeLabel">Pen</span>
+        <input type="range" id="brushSize" min="1" max="50" value="5" title="Size">
+        <span class="size-value" id="sizeValue">5px</span>
       </div>
 
       <div class="toolbar-divider"></div>
@@ -283,6 +311,15 @@
     </div>
 
     <div class="actions">
+      <!-- QR code: show the code an iPad scans to join (starts a live session) -->
+      <button class="tool-btn" id="btnQr" title="QR code: scan with an iPad to draw on this board (starts a live session)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+          <path d="M14 14h3v3"/><path d="M21 14v.01"/><path d="M14 21h.01"/><path d="M17 21h4v-4"/>
+          <rect x="6" y="6" width="1" height="1" fill="currentColor"/><rect x="17" y="6" width="1" height="1" fill="currentColor"/><rect x="6" y="17" width="1" height="1" fill="currentColor"/>
+        </svg>
+      </button>
+
       <!-- Live session: share the board with an iPad or another device -->
       <div class="dropdown" id="ddLive">
         <button class="tool-btn dropdown-trigger" id="btnLive" title="Live session: draw from an iPad or another device">
@@ -391,7 +428,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
-  <script src="whiteboard.js?v=22"></script>
-  <script src="live.js?v=3"></script>
+  <script src="whiteboard.js?v=23"></script>
+  <script src="live.js?v=4"></script>
 </body>
 </html>

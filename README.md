@@ -27,7 +27,9 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 
 | Feature | Description |
 |---------|-------------|
-| **Freehand pen** | Stabilised, curve-smoothed strokes that steady a shaky mouse (`B`), with an Off / Low / Medium / High smoothing control |
+| **Freehand pen** | Stabilised, curve-smoothed strokes that steady a shaky mouse (`B`) |
+| **Brushes** | Ball pen, calligraphy, marker, highlighter, pencil 2H / HB / 2B, chalk and sketch, each previewed in the Brush menu; Apple Pencil pressure on ball pen and calligraphy |
+| **Shape fill** | Fill boxes, circles and flowchart shapes from a pastel or bold palette, or a custom colour; applies to new shapes and to the selection |
 | **Hold to tidy** | Pause at the end of a pen stroke and it snaps to a clean line, circle, oval, rectangle or triangle |
 | **Shift to constrain** | Hold `Shift` for a straight pen stroke, 45° lines and arrows, and perfect squares and circles |
 | **Colour hotkey** | `Ctrl/Cmd + A` cycles the pen through six marker colours (`Shift` reverses) |
@@ -40,6 +42,7 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 | **Eraser with size ring** | A circle cursor shows the exact eraser size as you erase (`E`) |
 | **Side rails** | Shapes sit in a rail on the left; flowchart elements and 26 colours sit in a rail on the right (scrolling rows above and below the board on a phone). Each rail starts collapsed to one button that opens and closes it. Tap a shape to pick the tool, or drag it onto the board to drop a ready-made shape; tap a colour for the pen and the selection |
 | **Live session** | Start a session on the classroom PC, scan the QR code with an iPad (or enter the 6-character code) and both devices share one board in real time. Draw on the iPad and it appears on the projector |
+| **QR code button** | The QR icon in the header shows the join code full screen in one click, starting a live session if none is running |
 | **Apple Pencil / stylus** | Pressure-sensitive line width and a light stabiliser tuned for a stylus. **Pencil-only mode with palm rejection**: an iPad starts Pencil-only, and any device switches to it once a stylus is used and remembers it. Only the Pencil writes on the board. Fingers still press the toolbar, tools, the `+` page button, the page strip, the rails and the selection bar, and on the board they use gestures: **swipe left / right** to turn the page, **double-tap** for the next pen colour, **triple-tap** for the black pen. A touch that lands while the Pencil is down or just after it lifts, several contacts at once, or a palm-sized contact is ignored. The hand button turns finger drawing on. A resting palm or long press never selects the page or opens the iPad Copy / Look Up menu |
 | **Paper styles** | Whiteboard, paper or blackboard surface, each with a blank, lined, dotted or grid pattern; ink is recoloured when switching between light and dark |
 | **Multi-page support** | Add, delete, navigate, and reset pages with live thumbnail previews |

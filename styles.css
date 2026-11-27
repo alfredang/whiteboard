@@ -367,6 +367,64 @@ header {
   cursor: pointer;
 }
 
+/* ─── Fill dropdown ─── */
+.fill-trigger .trigger-icon {
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+}
+
+/* The current fill as a bar under the bucket; "none" is a red slash. */
+.fill-swatch {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 5px;
+  height: 5px;
+  border-radius: 2px;
+  border: 1px solid var(--border-focus);
+  pointer-events: none;
+}
+
+.fill-swatch.none,
+.swatch.fill-none {
+  background: linear-gradient(to top right, transparent calc(50% - 1px), #e84040 calc(50% - 1px), #e84040 calc(50% + 1px), transparent calc(50% + 1px)), #ffffff;
+}
+
+/* ─── Brush dropdown ─── */
+.brush-trigger {
+  width: auto;
+  min-width: 36px;
+  padding: 0 14px 0 10px;
+}
+
+.brush-name {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dropdown-panel.brush-panel {
+  width: 236px;
+}
+
+.brush-item {
+  padding: 5px 8px;
+}
+
+.brush-item .template-label {
+  white-space: nowrap;
+}
+
+.brush-preview {
+  width: 92px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1px solid var(--border-focus);
+}
+
 /* ─── Template dropdown ─── */
 .template-panel {
   width: 180px;
@@ -576,23 +634,6 @@ header {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   min-width: 40px;
-}
-
-.smooth-select {
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  background: var(--bg-hover);
-  border: 1px solid var(--border-focus);
-  border-radius: 6px;
-  padding: 5px 8px;
-  cursor: pointer;
-}
-
-.smooth-select:focus-visible {
-  outline: none;
-  border-color: var(--accent);
 }
 
 /* Action buttons */

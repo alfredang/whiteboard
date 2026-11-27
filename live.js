@@ -786,20 +786,46 @@
 
   // Full-screen QR code, large enough to scan from across a room.
   function showBigQr() {
-    const src = panel.querySelector('#liveQr img, #liveQr canvas');
-    if (!room || !src) return;
-    const overlay = document.createElement('div');
-    overlay.className = 'live-overlay';
-    overlay.innerHTML = `
-      <div class="live-overlay-card">
-        <img alt="QR code to join the live session">
-        <div class="live-code">${room.code}</div>
-        <p class="live-help">Scan to join, or open ${location.host}${location.pathname} and enter the code. Click anywhere to close.</p>
-      </div>`;
-    overlay.querySelector('img').src = src.tagName === 'CANVAS' ? src.toDataURL() : src.src;
-    overlay.addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
-    document.body.appendChild(overlay);
+    if (!room) return;
+    const code = room.code;
+    loadQrLib().then(() => {
+      if (!room || room.code !== code) return;
+      const holder = document.createElement('div');
+      new window.QRCode(holder, {
+        text: joinUrl(), width: 640, height: 640,
+        colorDark: '#111111', colorLight: '#ffffff',
+        correctLevel: window.QRCode.CorrectLevel.M,
+      });
+      const cv = holder.querySelector('canvas');
+      const im = holder.querySelector('img');
+      const src = cv ? cv.toDataURL() : (im && im.src);
+      if (!src) return;
+      document.querySelectorAll('.live-overlay').forEach(o => o.remove());
+      const overlay = document.createElement('div');
+      overlay.className = 'live-overlay';
+      overlay.innerHTML = `
+        <div class="live-overlay-card">
+          <img alt="QR code to join the live session">
+          <div class="live-code">${code}</div>
+          <p class="live-help">Scan with the iPad camera to join, or open ${location.host}${location.pathname} and enter the code. Click anywhere to close.</p>
+        </div>`;
+      overlay.querySelector('img').src = src;
+      overlay.addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
+      document.body.appendChild(overlay);
+    }).catch(() => showToast('QR code unavailable. Check the internet connection'));
   }
+
+  // The QR icon in the header: show the join code at once, starting a live
+  // session first when there is none.
+  async function showQr() {
+    if (!room) await start();
+    showBigQr();
+  }
+  document.getElementById('btnQr').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeDropdowns();
+    showQr();
+  });
 
   // Clicks inside the panel must not reach the document handler that closes dropdowns.
   panel.addEventListener('click', (e) => e.stopPropagation());

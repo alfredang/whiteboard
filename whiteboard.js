@@ -133,7 +133,7 @@ let lastY = 0;
 let currentTool = 'pen'; // 'select' | 'pen' | 'eraser' | 'lasso' | 'line' | 'circle' | shapes
 
 // Per-tool sizes
-const toolSizes = { pen: 4, eraser: 20 };
+const toolSizes = { pen: 5, eraser: 20 };
 const toolSizeRange = { pen: { min: 1, max: 50 }, eraser: { min: 5, max: 120 } };
 
 // Lasso state
@@ -501,6 +501,29 @@ function strokeBox(c, type, x, y, w, h, color, lw) {
   c.restore();
 }
 
+// Paint a box shape's inside. Drawn before the outline, so the outline and
+// the label sit on top of it.
+function fillBox(c, type, x, y, w, h, fill) {
+  if (!fill) return;
+  c.save();
+  c.globalCompositeOperation = 'source-over';
+  c.fillStyle = fill;
+  if (type === 'cylinder') {
+    // The outline path doubles back over the top ellipse, which would cancel
+    // out of a fill: fill the body and both ends as separate, same-way shapes.
+    const ry = Math.min(h * 0.16, 22), cx = x + w / 2;
+    c.beginPath();
+    c.rect(x, y + ry, w, h - ry * 2);
+    c.ellipse(cx, y + ry, w / 2, ry, 0, 0, Math.PI * 2);
+    c.moveTo(cx + w / 2, y + h - ry);
+    c.ellipse(cx, y + h - ry, w / 2, ry, 0, 0, Math.PI * 2);
+  } else {
+    strokeBoxPath(c, type, x, y, w, h);
+  }
+  c.fill();
+  c.restore();
+}
+
 function strokeArrow(c, x1, y1, x2, y2, color, lw) {
   const head = Math.max(10, lw * 3 + 6);
   const angle = Math.atan2(y2 - y1, x2 - x1);
@@ -586,33 +609,206 @@ function strokePressure(c, pts, color, lw) {
   c.restore();
 }
 
-function strokeFreehand(c, pts, color, lw, sharp) {
+// ─── Brushes ───
+// A freehand stroke's `brush` decides how it is drawn. Strokes without one are
+// ball pen, so older boards (and older clients) read them unchanged. `size`
+// scales the slider value when the stroke is made: the stored lineWidth is the
+// width actually drawn, so selection, scaling and erasing need no special case.
+// `pressure` brushes keep the stylus pressure of each point.
+const BRUSHES = {
+  ballpoint:   { label: 'Ball pen',    size: 1,   pressure: true },
+  calligraphy: { label: 'Calligraphy', size: 2.4, pressure: true },
+  marker:      { label: 'Marker',      size: 2.4 },
+  highlighter: { label: 'Highlighter', size: 4 },
+  pencil2h:    { label: 'Pencil 2H',   size: 0.8, grain: { density: 0.48, cell: 1 } },
+  pencilhb:    { label: 'Pencil HB',   size: 1,   grain: { density: 0.62, cell: 1 } },
+  pencil2b:    { label: 'Pencil 2B',   size: 1.4, grain: { density: 0.88, cell: 1 } },
+  chalk:       { label: 'Chalk',       size: 2.6, grain: { density: 0.72, cell: 2 } },
+  sketch:      { label: 'Sketch',      size: 0.6 },
+};
+const DEFAULT_BRUSH = 'ballpoint';
+function brushOf(name) { return BRUSHES[name] ? name : DEFAULT_BRUSH; }
+
+// Small seeded PRNG, so textured and sketchy strokes look the same on every
+// redraw and on every screen of a live session.
+function mulberry32(a) {
+  return function () {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashStr(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+// Any CSS colour → [r, g, b].
+const colorProbe = document.createElement('canvas').getContext('2d');
+function rgbOf(color) {
+  colorProbe.fillStyle = '#000000';
+  colorProbe.fillStyle = color;
+  const v = colorProbe.fillStyle;
+  if (v[0] === '#') return [1, 3, 5].map(i => parseInt(v.slice(i, i + 2), 16));
+  const m = v.match(/[\d.]+/g) || [0, 0, 0];
+  return [+m[0], +m[1], +m[2]];
+}
+
+// Graphite / chalk: the colour laid through a fixed paper-grain mask. The
+// pattern is anchored to the board, like real paper tooth, so overlapping
+// strokes share the same grain.
+const grainCache = new Map();
+function grainPattern(c, color, g) {
+  const key = color + '|' + g.density + '|' + g.cell;
+  let pat = grainCache.get(key);
+  if (pat) return pat;
+  if (grainCache.size > 64) grainCache.clear();
+  const N = 128;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = N;
+  const gc = cv.getContext('2d');
+  const img = gc.createImageData(N, N);
+  const [r, gr, b] = rgbOf(color);
+  const rand = mulberry32(0x5eed + Math.round(g.cell * 7));
+  for (let i = 0; i < N * N; i++) {
+    // Some pits in the paper take no graphite; the rest take a varying amount.
+    const a = rand() < (1 - g.density) * 0.6 ? 0 : g.density * (0.4 + 0.6 * rand());
+    img.data[i * 4] = r; img.data[i * 4 + 1] = gr; img.data[i * 4 + 2] = b;
+    img.data[i * 4 + 3] = Math.round(a * 255);
+  }
+  gc.putImageData(img, 0, 0);
+  pat = c.createPattern(cv, 'repeat');
+  if (g.cell !== 1 && pat.setTransform) pat.setTransform(new DOMMatrix().scale(g.cell));
+  grainCache.set(key, pat);
+  return pat;
+}
+
+// Trace a stroke's centre line: smoothed through the midpoints, or a plain
+// polyline for `sharp` (tidied polygon) strokes.
+function tracePath(c, pts, sharp) {
+  c.beginPath();
+  c.moveTo(pts[0][0], pts[0][1]);
+  if (sharp || pts.length < 3) {
+    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+    return;
+  }
+  for (let i = 1; i < pts.length - 1; i++) {
+    c.quadraticCurveTo(pts[i][0], pts[i][1],
+      (pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2);
+  }
+  c.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+}
+
+// The same smoothed centre line as tracePath, as a dense list of [x, y, p].
+function densify(pts, sharp) {
+  if (sharp || pts.length < 3) return pts.map(p => [p[0], p[1], p[2]]);
+  const out = [[pts[0][0], pts[0][1], pts[0][2]]];
+  let sx = pts[0][0], sy = pts[0][1];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const cx = pts[i][0], cy = pts[i][1];
+    const ex = (pts[i][0] + pts[i + 1][0]) / 2, ey = (pts[i][1] + pts[i + 1][1]) / 2;
+    for (let k = 1; k <= 4; k++) {
+      const t = k / 4, u = 1 - t;
+      out.push([u * u * sx + 2 * u * t * cx + t * t * ex, u * u * sy + 2 * u * t * cy + t * t * ey, pts[i][2]]);
+    }
+    sx = ex; sy = ey;
+  }
+  const L = pts[pts.length - 1];
+  out.push([L[0], L[1], L[2]]);
+  return out;
+}
+
+// One plain pass along the centre line with the context's current style.
+function strokePass(c, pts, lw, sharp, cap) {
+  c.lineWidth = lw;
+  c.lineCap = cap || 'round';
+  c.lineJoin = 'round';
+  if (pts.length === 1) {
+    c.beginPath();
+    if (c.lineCap === 'butt') c.rect(pts[0][0] - lw / 4, pts[0][1] - lw / 2, lw / 2, lw);
+    else c.arc(pts[0][0], pts[0][1], lw / 2, 0, Math.PI * 2);
+    c.fill();
+    return;
+  }
+  tracePath(c, pts, sharp);
+  c.stroke();
+}
+
+// Calligraphy: a flat nib held at 45°. The stroke is thick across the nib and
+// thin along it; a hairline keeps strokes along the nib from vanishing.
+function strokeNib(c, pts, lw, sharp) {
+  const ux = Math.cos(-Math.PI / 4), uy = Math.sin(-Math.PI / 4);
+  const half = p => (p[2] == null ? lw : pressureWidth(lw, p)) / 2;
+  const d = densify(pts, sharp);
+  c.beginPath();
+  for (let i = 1; i < d.length; i++) {
+    const a = d[i - 1], b = d[i], ha = half(a), hb = half(b);
+    const q = [
+      [a[0] + ux * ha, a[1] + uy * ha], [b[0] + ux * hb, b[1] + uy * hb],
+      [b[0] - ux * hb, b[1] - uy * hb], [a[0] - ux * ha, a[1] - uy * ha],
+    ];
+    // Wind every quad the same way, so the non-zero fill unions them.
+    let area = 0;
+    for (let k = 0; k < 4; k++) { const m = q[k], n = q[(k + 1) % 4]; area += m[0] * n[1] - n[0] * m[1]; }
+    if (area < 0) q.reverse();
+    c.moveTo(q[0][0], q[0][1]);
+    for (let k = 1; k < 4; k++) c.lineTo(q[k][0], q[k][1]);
+    c.closePath();
+  }
+  c.fill();
+  strokePass(c, pts, Math.max(1, lw * 0.12), sharp);
+}
+
+// Sketch: a firm line plus two loose, wandering passes, like a quick drawing.
+function strokeSketch(c, pts, lw, sharp, seed) {
+  const rand = mulberry32(hashStr(String(seed || 'sketch')));
+  for (let k = 0; k < 3; k++) {
+    const amp = Math.max(2.5, lw * 1.4) * (k === 0 ? 0.3 : 1);
+    const f1 = 0.12 + rand() * 0.12, f2 = 0.03 + rand() * 0.03;
+    const ph = [0, 0, 0, 0].map(() => rand() * Math.PI * 2);
+    // Each loose pass sits a little off the line, as a hand never retraces exactly.
+    const ox = k === 0 ? 0 : (rand() - 0.5) * amp, oy = k === 0 ? 0 : (rand() - 0.5) * amp;
+    const jp = pts.map((p, i) => [
+      p[0] + ox + amp * (0.55 * Math.sin(i * f1 + ph[0]) + 0.45 * Math.sin(i * f2 + ph[1])),
+      p[1] + oy + amp * (0.55 * Math.sin(i * f1 + ph[2]) + 0.45 * Math.sin(i * f2 + ph[3])),
+    ]);
+    c.globalAlpha = k === 0 ? 0.9 : 0.45;
+    strokePass(c, jp, k === 0 ? lw : lw * 0.7, sharp);
+  }
+}
+
+function strokeFreehand(c, pts, color, lw, sharp, brush, seed) {
   if (!pts || pts.length === 0) return;
-  if (!sharp && pts[0].length > 2) { strokePressure(c, pts, color, lw); return; }
+  const name = brushOf(brush);
+  if (name === DEFAULT_BRUSH && !sharp && pts[0].length > 2) { strokePressure(c, pts, color, lw); return; }
+  const def = BRUSHES[name];
   c.save();
   c.globalCompositeOperation = 'source-over';
   c.strokeStyle = color;
   c.fillStyle = color;
-  c.lineWidth = lw;
-  c.lineCap = 'round';
-  c.lineJoin = 'round';
-  if (pts.length === 1) {
-    c.beginPath();
-    c.arc(pts[0][0], pts[0][1], lw / 2, 0, Math.PI * 2);
-    c.fill();
+  if (def.grain) {
+    const pat = grainPattern(c, color, def.grain);
+    c.strokeStyle = pat;
+    c.fillStyle = pat;
+    strokePass(c, pts, lw, sharp);
+  } else if (name === 'calligraphy') {
+    strokeNib(c, pts, lw, sharp);
+  } else if (name === 'sketch') {
+    strokeSketch(c, pts, lw, sharp, seed);
+  } else if (name === 'marker') {
+    c.globalAlpha = 0.86;
+    strokePass(c, pts, lw, sharp);
+  } else if (name === 'highlighter') {
+    // Multiply on light paper and screen on a dark board: the colour shows
+    // and the writing underneath stays readable.
+    const dark = tpl().dark;
+    c.globalCompositeOperation = dark ? 'screen' : 'multiply';
+    c.globalAlpha = dark ? 0.6 : 0.55;
+    strokePass(c, pts, lw, sharp, 'butt');
   } else {
-    c.beginPath();
-    c.moveTo(pts[0][0], pts[0][1]);
-    if (sharp || pts.length < 3) {
-      for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
-    } else {
-      for (let i = 1; i < pts.length - 1; i++) {
-        c.quadraticCurveTo(pts[i][0], pts[i][1],
-          (pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2);
-      }
-      c.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
-    }
-    c.stroke();
+    strokePass(c, pts, lw, sharp);
   }
   c.restore();
 }
@@ -692,8 +888,9 @@ function drawShape(c, s) {
     const [p1, p2] = arrowEnds(s);
     strokeLine(c, p1.x, p1.y, p2.x, p2.y, s.color, s.lineWidth);
   } else if (s.type === 'stroke') {
-    strokeFreehand(c, s.pts, s.color, s.lineWidth, s.sharp);
+    strokeFreehand(c, s.pts, s.color, s.lineWidth, s.sharp, s.brush, s.id);
   } else {
+    fillBox(c, s.type, s.x, s.y, s.w, s.h, s.fill);
     strokeBox(c, s.type, s.x, s.y, s.w, s.h, s.color, s.lineWidth);
     if (s !== editingBox && s.text) fillBoxText(c, s.type, s.x, s.y, s.w, s.h, s.text, s.color);
   }
@@ -1339,6 +1536,76 @@ dropdowns.forEach(dd => {
   });
 });
 
+// ─── Brush menu ───
+// The pen draws with one brush at a time; the choice is kept between visits.
+const BRUSH_KEY = 'whiteboard.brush';
+let currentBrush = DEFAULT_BRUSH;
+try { currentBrush = brushOf(localStorage.getItem(BRUSH_KEY)); } catch { /* storage unavailable */ }
+
+// Width a new stroke is drawn at: the slider value scaled for the brush.
+function brushWidth(name) {
+  return Math.max(1, Math.round(toolSizes.pen * BRUSHES[name].size * 10) / 10);
+}
+
+const brushNameEl = document.getElementById('brushName');
+const brushList = document.getElementById('brushList');
+const PREVIEW_W = 92, PREVIEW_H = 26;
+
+Object.entries(BRUSHES).forEach(([name, def]) => {
+  const item = document.createElement('button');
+  item.className = 'template-item brush-item';
+  item.dataset.brush = name;
+  const cv = document.createElement('canvas');
+  cv.className = 'brush-preview';
+  const label = document.createElement('span');
+  label.className = 'template-label';
+  label.textContent = def.label;
+  item.append(cv, label);
+  item.addEventListener('click', () => setBrush(name));
+  brushList.appendChild(item);
+});
+
+// A sample squiggle in each brush, in the current colour on the current paper.
+function renderBrushPreviews() {
+  const dpr = window.devicePixelRatio || 1;
+  const pts = [];
+  for (let i = 0; i <= 40; i++) {
+    const t = i / 40;
+    pts.push([8 + t * (PREVIEW_W - 16), PREVIEW_H / 2 + Math.sin(t * Math.PI * 2) * (PREVIEW_H / 2 - 7), 0.25 + 0.6 * Math.sin(t * Math.PI)]);
+  }
+  brushList.querySelectorAll('.brush-preview').forEach(cv => {
+    const name = cv.parentElement.dataset.brush;
+    cv.width = PREVIEW_W * dpr;
+    cv.height = PREVIEW_H * dpr;
+    const c = cv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = canvasBgColor();
+    c.fillRect(0, 0, PREVIEW_W, PREVIEW_H);
+    // Preview at a size that fits the swatch, whatever the slider says.
+    const lw = Math.max(1, Math.min(4, toolSizes.pen) * BRUSHES[name].size);
+    const p = BRUSHES[name].pressure ? pts : pts.map(q => [q[0], q[1]]);
+    strokeFreehand(c, p, colorPicker.value, lw, false, name, 'preview-' + name);
+  });
+}
+
+function syncBrushMenu() {
+  brushNameEl.textContent = BRUSHES[currentBrush].label;
+  brushList.querySelectorAll('.brush-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.brush === currentBrush);
+  });
+}
+
+function setBrush(name) {
+  currentBrush = brushOf(name);
+  try { localStorage.setItem(BRUSH_KEY, currentBrush); } catch { /* ignore */ }
+  syncBrushMenu();
+  closeDropdowns();
+  setTool('pen');
+}
+
+document.getElementById('btnBrush').addEventListener('click', renderBrushPreviews);
+syncBrushMenu();
+
 // ─── Side rails ───
 // Shapes down the left edge, flowchart elements (and colours, added below)
 // down the right; on a phone they are rows above and below the board. The
@@ -1408,6 +1675,7 @@ function placeShape(tool, pos) {
       id: newId(), type: def.type,
       x: clamp(pos.x - w / 2, 2, W - w - 2), y: clamp(pos.y - h / 2, 2, H - h - 2), w, h,
       text: '', color: colorPicker.value, lineWidth: size,
+      ...(currentFill ? { fill: currentFill } : {}),
     };
   }
   shapes.push(s);
@@ -1589,11 +1857,11 @@ async function setSurface(name) {
     for (const page of pages) {
       touchInk(page);
       page.ink = await invertImageDataURL(page.ink);
-      page.shapes.forEach(s => { s.color = invertHex(s.color); });
+      page.shapes.forEach(s => { s.color = invertHex(s.color); if (s.fill) s.fill = invertHex(s.fill); });
       page.liveDirty = true;
       page.undoStack = await Promise.all(page.undoStack.map(async (snap) => ({
         ink: await invertImageDataURL(snap.ink),
-        shapes: snap.shapes.map(s => ({ ...s, color: invertHex(s.color) })),
+        shapes: snap.shapes.map(s => ({ ...s, color: invertHex(s.color), ...(s.fill ? { fill: invertHex(s.fill) } : {}) })),
       })));
     }
     // Flip the default pen colour if it still matches the old surface's default.
@@ -1722,6 +1990,67 @@ function cyclePenColor(dir) {
   applyColor(list[next][0]);
   showToast(`Pen colour: ${list[next][1]}`);
 }
+
+// ─── Fill colour ───
+// Boxes, circles and flowchart shapes can be filled. The chosen fill is used
+// for new shapes and applied to whatever is selected; null means no fill.
+const FILL_PALETTE = [
+  '#ffffff', '#fff3a3', '#ffd8a8', '#ffc9c9', '#fcc2d7', '#e5dbff',
+  '#d0ebff', '#c3fae8', '#d3f9d8', '#e9ecef', '#ffd600', '#ff9900',
+  '#e84040', '#9c27b0', '#0078ff', '#00bcbc', '#4caf50',
+];
+let currentFill = null;
+const fillSwatchEl = document.getElementById('fillSwatch');
+const fillGrid = document.getElementById('fillGrid');
+const fillPicker = document.getElementById('fillPicker');
+
+function syncFillMenu() {
+  fillSwatchEl.classList.toggle('none', !currentFill);
+  fillSwatchEl.style.background = currentFill || '';
+  document.querySelectorAll('#fillPanel [data-fill]').forEach(el => {
+    el.classList.toggle('active', (el.dataset.fill || '') === (currentFill || '').toLowerCase());
+  });
+}
+
+// Fill the selected box shapes (Select or Lasso tool).
+function fillSelection(fill) {
+  if (!showsSelection()) return;
+  const boxes = selectedShapes().filter(isBoxLike);
+  if (!boxes.length) return;
+  boxes.forEach(s => { if (fill) s.fill = fill; else delete s.fill; });
+  render();
+  saveUndoState();
+  syncCurrentPage();
+}
+
+function applyFill(fill) {
+  currentFill = fill ? fill.toLowerCase() : null;
+  syncFillMenu();
+  fillSelection(currentFill);
+}
+
+(() => {
+  const none = document.createElement('button');
+  none.type = 'button';
+  none.className = 'swatch fill-none';
+  none.dataset.fill = '';
+  none.title = 'No fill';
+  none.setAttribute('aria-label', 'No fill');
+  none.addEventListener('click', (e) => { e.stopPropagation(); applyFill(null); closeDropdowns(); });
+  fillGrid.appendChild(none);
+  FILL_PALETTE.forEach(hex => {
+    const sw = document.createElement('button');
+    sw.type = 'button';
+    sw.className = 'swatch';
+    sw.dataset.fill = hex;
+    sw.style.background = hex;
+    sw.title = hex;
+    sw.addEventListener('click', (e) => { e.stopPropagation(); applyFill(hex); closeDropdowns(); });
+    fillGrid.appendChild(sw);
+  });
+  fillPicker.addEventListener('input', () => applyFill(fillPicker.value));
+  syncFillMenu();
+})();
 
 // ─── Brush Size ───
 brushSize.addEventListener('input', () => {
@@ -1917,6 +2246,7 @@ function finishShape() {
     id: newId(), type: def.type,
     x: b.x, y: b.y, w: b.w, h: b.h,
     text: '', color: colorPicker.value, lineWidth: size,
+    ...(currentFill ? { fill: currentFill } : {}),
   };
   shapes.push(s);
   selectOnly(s.id);
@@ -2231,7 +2561,7 @@ function eraseStrokesAt(pos, radius) {
     } else {
       changed = true;
       for (const r of runs) {
-        if (r.length >= 2) next.push({ id: newId(), type: 'stroke', pts: r, color: s.color, lineWidth: s.lineWidth, ...(s.sharp ? { sharp: true } : {}) });
+        if (r.length >= 2) next.push({ id: newId(), type: 'stroke', pts: r, color: s.color, lineWidth: s.lineWidth, ...(s.sharp ? { sharp: true } : {}), ...(s.brush ? { brush: s.brush } : {}) });
       }
     }
   }
@@ -2262,20 +2592,8 @@ function eraseAt(pos) {
 // The ink does not follow the cursor directly. It follows a "brush" point that
 // the cursor drags along on a short string: movements smaller than the string
 // length (hand tremor, mouse jitter) do not move the brush at all.
-const SMOOTH_LEVELS = { off: 0, low: 3, medium: 6, high: 12 }; // string length, canvas px
-const SMOOTH_KEY = 'whiteboard.smoothing';
-const smoothSelect = document.getElementById('smoothLevel');
-let smoothing = 'medium';
-try {
-  const saved = localStorage.getItem(SMOOTH_KEY);
-  if (saved && saved in SMOOTH_LEVELS) smoothing = saved;
-} catch { /* storage unavailable */ }
-smoothSelect.value = smoothing;
-smoothSelect.addEventListener('change', () => {
-  smoothing = smoothSelect.value;
-  try { localStorage.setItem(SMOOTH_KEY, smoothing); } catch { /* ignore */ }
-  smoothSelect.blur(); // give the keyboard back to the tool shortcuts
-});
+// Smoothing is fixed at High: a 12 px string (canvas px). No user control.
+const SMOOTH_STRING = 12;
 
 const PEN_MIN_DIST = 1.5;  // drop samples closer than this to the previous point
 const HOLD_MS = 550;       // hold still this long to tidy the stroke into a shape
@@ -2284,6 +2602,7 @@ const HOLD_SLOP = 4;       // movement (canvas px) that still counts as holding 
 let brush = null;        // stabilised pen position
 let penStylus = false;   // the current stroke comes from a stylus (Apple Pencil, Surface Pen)
 let brushP = 0.5;        // smoothed stylus pressure
+let penPressure = false; // the current stroke records pressure (stylus + a pressure brush)
 const STYLUS_STRING = 1.5; // a stylus is steady already: cap the stabiliser string here
 
 function r1(v) { return Math.round(v * 10) / 10; }
@@ -2321,7 +2640,7 @@ function constrainEnd(start, pos, def) {
 }
 
 function penPoint(x, y) {
-  return penStylus ? [r1(x), r1(y), Math.round(brushP * 100) / 100] : [r1(x), r1(y)];
+  return penPressure ? [r1(x), r1(y), Math.round(brushP * 100) / 100] : [r1(x), r1(y)];
 }
 
 function penAddPoint(x, y) {
@@ -2338,10 +2657,12 @@ function armHold(pos) {
 
 function penStart(pos, pressure) {
   penStylus = pressure != null;
+  penPressure = penStylus && !!BRUSHES[currentBrush].pressure;
   brushP = penStylus ? pressure : 0.5;
   activeStroke = {
     id: newId(), type: 'stroke', pts: [penPoint(pos.x, pos.y)],
-    color: colorPicker.value, lineWidth: toolSizes.pen,
+    color: colorPicker.value, lineWidth: brushWidth(currentBrush),
+    ...(currentBrush !== DEFAULT_BRUSH ? { brush: currentBrush } : {}),
   };
   shapes.push(activeStroke);
   brush = { x: pos.x, y: pos.y };
@@ -2367,7 +2688,7 @@ function penMove(pos, shift, pressure) {
   }
   penStraight = false;
 
-  const r = penStylus ? Math.min(SMOOTH_LEVELS[smoothing], STYLUS_STRING) : SMOOTH_LEVELS[smoothing];
+  const r = penStylus ? Math.min(SMOOTH_STRING, STYLUS_STRING) : SMOOTH_STRING;
   const d = dist(pos, brush);
   if (d <= r) return;
   const k = (d - r) / d;
@@ -2497,6 +2818,24 @@ function recognizeStroke(rawPts) {
   return err < 0.2 ? ellipse() : null;
 }
 
+// A recognised shape as stroke points: { pts, sharp } for a brush stroke.
+function tidiedPoints(hit) {
+  if (hit.kind === 'line') return { pts: [[hit.x1, hit.y1], [hit.x2, hit.y2]], sharp: true };
+  if (hit.kind === 'rect') {
+    const { x, y, w, h } = hit;
+    return { pts: [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]], sharp: true };
+  }
+  if (hit.kind === 'ellipse') {
+    const cx = hit.x + hit.w / 2, cy = hit.y + hit.h / 2, pts = [];
+    for (let i = 0; i <= 64; i++) {
+      const a = (i / 64) * Math.PI * 2;
+      pts.push([r1(cx + (hit.w / 2) * Math.cos(a)), r1(cy + (hit.h / 2) * Math.sin(a))]);
+    }
+    return { pts, sharp: true };
+  }
+  return { pts: hit.pts, sharp: true };
+}
+
 // Fired when the pen is held still mid-stroke: swap the wobbly stroke for the
 // clean shape it resembles. The rest of the drag is ignored until release.
 function snapHeldStroke() {
@@ -2508,7 +2847,14 @@ function snapHeldStroke() {
 
   const base = { id: activeStroke.id, color: activeStroke.color, lineWidth: activeStroke.lineWidth };
   let shape, label;
-  if (hit.kind === 'line') {
+  if (activeStroke.brush) {
+    // Another brush stays that brush: the clean shape is redrawn as a stroke
+    // (a solid line or box would lose the pencil grain, highlighter, …).
+    shape = { ...base, type: 'stroke', brush: activeStroke.brush, ...tidiedPoints(hit) };
+    label = hit.kind === 'polygon' ? (hit.pts.length === 4 ? 'triangle' : 'quadrilateral')
+      : hit.kind === 'ellipse' ? (hit.w === hit.h ? 'circle' : 'oval')
+      : hit.kind === 'rect' ? 'rectangle' : 'line';
+  } else if (hit.kind === 'line') {
     shape = { ...base, type: 'line', x1: hit.x1, y1: hit.y1, x2: hit.x2, y2: hit.y2, from: null, to: null };
     label = 'line';
   } else if (hit.kind === 'ellipse') {
@@ -2617,6 +2963,7 @@ function draw(e) {
       }
     } else {
       const b = normBounds(lineStart.x, lineStart.y, pos.x, pos.y);
+      fillBox(ctx, def.type, b.x, b.y, b.w, b.h, currentFill);
       strokeBox(ctx, def.type, b.x, b.y, b.w, b.h, colorPicker.value, size);
     }
     return;
