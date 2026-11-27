@@ -1312,6 +1312,20 @@ header { animation: fadeUp 0.4s ease both; }
 /* ─── Touch and stylus devices (iPad) ─── */
 html, body { overscroll-behavior: none; }
 
+/* No text selection, loupe or Copy / Look Up menu anywhere on the board:
+   a resting palm or a long press on the page strip or a rail used to select
+   the page. iPad Safari obeys only the -webkit- prefix. */
+html, body, body * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 canvas { -webkit-touch-callout: none; }
 
 button, .tool-btn, .btn, .swatch, .page-thumb {

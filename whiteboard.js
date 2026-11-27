@@ -2683,6 +2683,24 @@ const GRAZE_MS = 150;
 const GRAZE_PX = 12;
 let fingerStroke = null; // { t, x, y, reach } of the finger drawing now
 
+// No text selection outside the text fields. On an iPad a long press or a
+// resting palm on the page strip or a rail selected the page and opened the
+// Copy / Look Up / Translate menu over the board. The CSS blocks it; this
+// catches any selection the browser starts anyway.
+function editableTarget(n) {
+  const el = n && (n.nodeType === 1 ? n : n.parentElement);
+  return !!(el && el.closest('input, textarea, [contenteditable="true"]'));
+}
+document.addEventListener('selectstart', e => {
+  if (!editableTarget(e.target)) e.preventDefault();
+}, true);
+document.addEventListener('selectionchange', () => {
+  const sel = document.getSelection();
+  if (!sel || sel.isCollapsed || editableTarget(sel.anchorNode)
+      || editableTarget(document.activeElement)) return;
+  sel.removeAllRanges();
+});
+
 // Palm rejection. Once a stylus has touched the board the app is Pencil-only:
 // fingers and the palm do nothing anywhere (a resting palm is a finger as far
 // as the browser can tell). The hand button that appears in the toolbar turns
