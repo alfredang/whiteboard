@@ -40,7 +40,7 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 | **Eraser with size ring** | A circle cursor shows the exact eraser size as you erase (`E`) |
 | **Side rails** | Shapes sit in a rail on the left; flowchart elements and 26 colours sit in a rail on the right (scrolling rows above and below the board on a phone). Each rail starts collapsed to one button that opens and closes it. Tap a shape to pick the tool, or drag it onto the board to drop a ready-made shape; tap a colour for the pen and the selection |
 | **Live session** | Start a session on the classroom PC, scan the QR code with an iPad (or enter the 6-character code) and both devices share one board in real time. Draw on the iPad and it appears on the projector |
-| **Apple Pencil / stylus** | Pressure-sensitive line width, palm rejection (fingers are ignored once a stylus is used; the hand button turns finger drawing back on) and a light stabiliser tuned for a stylus. Double-tap the board with a finger to switch to the next pen colour; triple-tap to go back to the black pen |
+| **Apple Pencil / stylus** | Pressure-sensitive line width, palm rejection (an iPad starts stylus-only, and any device switches to it once a stylus is used and remembers it; the hand button turns finger drawing back on). The resting palm cannot draw, tap the board or press the toolbar, page strip, rails or selection bar: a touch that lands while the Pencil is down or within a second after it lifts, several contacts at once, or a palm-sized contact is ignored. In finger-drawing mode a brief graze leaves no mark and a light stabiliser tuned for a stylus. Double-tap the board with a finger to switch to the next pen colour; triple-tap to go back to the black pen |
 | **Paper styles** | Whiteboard, paper or blackboard surface, each with a blank, lined, dotted or grid pattern; ink is recoloured when switching between light and dark |
 | **Multi-page support** | Add, delete, navigate, and reset pages with live thumbnail previews |
 | **Colour palette** | 26 swatches plus a custom colour picker; applies to the pen and to selected shapes |
@@ -97,9 +97,11 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 whiteboard/
 ├── index.html          # Toolbar, canvas, page strip, status bar, text editor overlay
 ├── styles.css          # Dark/light themes, responsive layout, animations, cursors
-├── whiteboard.js       # Pen engine (smoothing, shape tidy), shapes & labels, pages, undo, PDF export
+├── whiteboard.js       # Pen engine (smoothing, shape tidy), palm rejection, shapes & labels, pages, undo, PDF export
 ├── live.js             # Live sessions: Firebase sync, room code + QR join, shared undo
 ├── database.rules.json # Realtime Database access rules (deploy with the Firebase CLI)
+├── firebase.json       # Firebase CLI config (points at database.rules.json)
+├── .firebaserc         # Firebase project alias
 ├── .github/workflows/deploy.yml   # GitHub Pages deployment
 ├── preview.png         # Screenshot for README
 └── README.md
