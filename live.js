@@ -30,6 +30,7 @@
   const QR_LIB = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
   const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I, L, O, 0, 1
   const CODE_RE = /^[A-Z2-9]{6}$/;
+  const SCAN_LIB = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
   const HOST_KEY = 'whiteboard.live.host';
   const LIVE_TICK_MS = 60;
 
@@ -825,6 +826,144 @@
     e.stopPropagation();
     closeDropdowns();
     showQr();
+  });
+
+  // ─── Scan: join by pointing this device's camera at a session's QR code ───
+  // Safari on iPad has no BarcodeDetector, so jsQR decodes the frames there.
+  function loadScanLib() {
+    if (window.jsQR) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = SCAN_LIB;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  // A join link (…?join=CODE) or a bare 6-character code; anything else is not ours.
+  function codeFromScan(text) {
+    let raw = null;
+    try { raw = new URL(text).searchParams.get('join'); } catch (err) { raw = text; }
+    const code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return CODE_RE.test(code) ? code : null;
+  }
+
+  let scanning = null;
+
+  function stopScan() {
+    if (!scanning) return;
+    const s = scanning;
+    scanning = null;
+    cancelAnimationFrame(s.raf);
+    if (s.stream) s.stream.getTracks().forEach(t => t.stop());
+    document.removeEventListener('keydown', s.onKey, true);
+    s.overlay.remove();
+  }
+
+  async function startScan() {
+    if (room) {
+      showToast(`Already in live session ${room.code}. ${room.host ? 'End' : 'Leave'} it first`);
+      return;
+    }
+    if (scanning) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showToast('No camera here. Type the code in the Live menu instead');
+      return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'scan-overlay';
+    overlay.innerHTML = `
+      <div class="scan-card">
+        <div class="scan-view">
+          <video playsinline muted autoplay></video>
+          <div class="scan-frame"></div>
+        </div>
+        <p class="scan-hint">Point the camera at the QR code on the classroom screen</p>
+        <button class="btn scan-cancel">Cancel</button>
+      </div>`;
+    const video = overlay.querySelector('video');
+    const hint = overlay.querySelector('.scan-hint');
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); stopScan(); } };
+    scanning = { overlay, stream: null, raf: 0, onKey };
+    overlay.addEventListener('click', (e) => { e.stopPropagation(); if (e.target === overlay) stopScan(); });
+    overlay.querySelector('.scan-cancel').addEventListener('click', stopScan);
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(overlay);
+
+    const session = scanning;
+    let detector = null;
+    try {
+      const formats = window.BarcodeDetector && await window.BarcodeDetector.getSupportedFormats();
+      if (formats && formats.includes('qr_code')) detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    } catch (err) { detector = null; }
+    try {
+      const [stream] = await Promise.all([
+        navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        }),
+        detector ? null : loadScanLib(),
+      ]);
+      if (scanning !== session) { stream.getTracks().forEach(t => t.stop()); return; }
+      session.stream = stream;
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+    } catch (err) {
+      const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      stopScan();
+      showToast(denied ? 'Camera access was blocked. Allow it in the browser settings, or type the code in the Live menu'
+        : err && err.name ? 'Camera unavailable. Type the code in the Live menu instead'
+        : 'QR scanner unavailable. Check the internet connection');
+      return;
+    }
+
+    const cv = document.createElement('canvas');
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    let last = 0, busyFrame = false, warned = 0;
+    const found = (text) => {
+      const code = codeFromScan(text);
+      if (!code) {
+        if (performance.now() - warned > 2500) {
+          warned = performance.now();
+          hint.textContent = 'That is not a whiteboard session code. Try the QR code on the classroom screen';
+        }
+        return false;
+      }
+      stopScan();
+      join(code);
+      return true;
+    };
+    const tick = async (t) => {
+      if (scanning !== session) return;
+      session.raf = requestAnimationFrame(tick);
+      if (busyFrame || t - last < 120 || video.readyState < 2 || !video.videoWidth) return;
+      last = t;
+      busyFrame = true;
+      try {
+        if (detector) {
+          const codes = await detector.detect(video);
+          for (const c of codes) if (scanning === session && found(c.rawValue)) break;
+        } else {
+          const scale = Math.min(1, 720 / Math.max(video.videoWidth, video.videoHeight));
+          cv.width = Math.round(video.videoWidth * scale);
+          cv.height = Math.round(video.videoHeight * scale);
+          cx.drawImage(video, 0, 0, cv.width, cv.height);
+          const img = cx.getImageData(0, 0, cv.width, cv.height);
+          const r = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+          if (r && r.data) found(r.data);
+        }
+      } catch (err) { /* a frame that fails to decode is skipped */ }
+      busyFrame = false;
+    };
+    session.raf = requestAnimationFrame(tick);
+  }
+
+  document.getElementById('btnScan').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeDropdowns();
+    startScan();
   });
 
   // Clicks inside the panel must not reach the document handler that closes dropdowns.

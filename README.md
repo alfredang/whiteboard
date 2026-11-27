@@ -43,6 +43,7 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 | **Side rails** | Shapes sit in a rail on the left; flowchart elements and 26 colours sit in a rail on the right (scrolling rows above and below the board on a phone). Each rail starts collapsed to one button that opens and closes it. Tap a shape to pick the tool, or drag it onto the board to drop a ready-made shape; tap a colour for the pen and the selection |
 | **Live session** | Start a session on the classroom PC, scan the QR code with an iPad (or enter the 6-character code) and both devices share one board in real time. Draw on the iPad and it appears on the projector |
 | **QR code button** | The QR icon in the header shows the join code full screen in one click, starting a live session if none is running |
+| **Scan to join** | The scan icon beside it opens the device camera (iPad or phone); point it at a session's QR code and the device joins that session straight away, with no code to type |
 | **Apple Pencil / stylus** | Pressure-sensitive line width and a light stabiliser tuned for a stylus. **Pencil-only mode with palm rejection**: an iPad starts Pencil-only, and any device switches to it once a stylus is used and remembers it. Only the Pencil writes on the board. Fingers still press the toolbar, tools, the `+` page button, the page strip, the rails and the selection bar, and on the board they use gestures: **swipe left / right** to turn the page, **double-tap** for the next pen colour, **triple-tap** for the black pen. A touch that lands while the Pencil is down or just after it lifts, several contacts at once, or a palm-sized contact is ignored. The hand button turns finger drawing on. A resting palm or long press never selects the page or opens the iPad Copy / Look Up menu |
 | **Paper styles** | Whiteboard, paper or blackboard surface, each with a blank, lined, dotted or grid pattern; ink is recoloured when switching between light and dark |
 | **Multi-page support** | Add, delete, navigate, and reset pages with live thumbnail previews |
@@ -101,7 +102,7 @@ whiteboard/
 ├── index.html          # Toolbar, canvas, page strip, status bar, text editor overlay
 ├── styles.css          # Dark/light themes, responsive layout, animations, cursors
 ├── whiteboard.js       # Pen engine (smoothing, shape tidy), palm rejection, shapes & labels, pages, undo, PDF export
-├── live.js             # Live sessions: Firebase sync, room code + QR join, shared undo
+├── live.js             # Live sessions: Firebase sync, room code, QR show + camera scan join, shared undo
 ├── database.rules.json # Realtime Database access rules (deploy with the Firebase CLI)
 ├── firebase.json       # Firebase CLI config (points at database.rules.json)
 ├── .firebaserc         # Firebase project alias
@@ -174,7 +175,7 @@ Live sessions use Firebase Realtime Database in project `edtools-whiteboard-asia
 - a room locks 48 hours after it was created;
 - the host's **End session** deletes the room.
 
-Deploy rule changes with `firebase deploy --only database`. The Firebase SDK and the QR library load only when a session starts or is joined, so the board still works offline as before.
+Deploy rule changes with `firebase deploy --only database`. The Firebase SDK, the QR library and the QR scanner (jsQR, used where the browser has no built-in BarcodeDetector, as on iPad Safari) load only when needed, so the board still works offline as before.
 
 A device that joins shows the host's board and leaves its own saved board untouched. Undo is shared: Ctrl+Z on the PC takes back the last stroke drawn on the iPad. Every device follows the page the last person switched to.
 

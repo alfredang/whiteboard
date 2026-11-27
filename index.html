@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Whiteboard">
   <meta name="theme-color" content="#141418">
   <title>Whiteboard</title>
-  <link rel="stylesheet" href="styles.css?v=11">
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
   <header>
@@ -312,11 +312,20 @@
 
     <div class="actions">
       <!-- QR code: show the code an iPad scans to join (starts a live session) -->
-      <button class="tool-btn" id="btnQr" title="QR code: scan with an iPad to draw on this board (starts a live session)">
+      <button class="tool-btn" id="btnQr" title="Show the QR code: an iPad scans it to draw on this board (starts a live session)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
           <path d="M14 14h3v3"/><path d="M21 14v.01"/><path d="M14 21h.01"/><path d="M17 21h4v-4"/>
           <rect x="6" y="6" width="1" height="1" fill="currentColor"/><rect x="17" y="6" width="1" height="1" fill="currentColor"/><rect x="6" y="17" width="1" height="1" fill="currentColor"/>
+        </svg>
+      </button>
+
+      <!-- Scan: join a live session by pointing this device's camera at its QR code -->
+      <button class="tool-btn" id="btnScan" title="Scan a QR code: join a live session with this device's camera">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+          <path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+          <path d="M7 12h10"/>
         </svg>
       </button>
 
@@ -429,6 +438,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
   <script src="whiteboard.js?v=23"></script>
-  <script src="live.js?v=4"></script>
+  <script src="live.js?v=5"></script>
 </body>
 </html>
