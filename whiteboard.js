@@ -3401,6 +3401,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'd') setTool('decision');
   if (e.key === 'g') setTool('terminator');
   if (e.key === 'c') setTool('connector');
+  if (e.key === 'f') toggleFullscreen();
 
   if (e.key === 'PageUp') { e.preventDefault(); if (currentPage > 0) switchPage(currentPage - 1); }
   if (e.key === 'PageDown') { e.preventDefault(); if (currentPage < pages.length - 1) switchPage(currentPage + 1); }
@@ -3428,6 +3429,81 @@ window.addEventListener('resize', () => {
   updateSelBar();
 });
 resizeCanvas();
+
+// ─── Full screen ───
+// Hides the browser's address bar and tabs. iPad Safari has it (with the
+// webkit prefix on older iPadOS); iPhone Safari does not, so the button
+// stays hidden there.
+const fsRoot = document.documentElement;
+const fsSupported = !!(fsRoot.requestFullscreen || fsRoot.webkitRequestFullscreen)
+  && (document.fullscreenEnabled || document.webkitFullscreenEnabled) !== false;
+const btnFullscreen = document.getElementById('btnFullscreen');
+
+function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+
+function toggleFullscreen() {
+  if (!fsSupported) return;
+  try {
+    if (fsElement()) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      const r = (fsRoot.requestFullscreen || fsRoot.webkitRequestFullscreen).call(fsRoot);
+      if (r && r.catch) r.catch(() => showToast('Full screen is not available here'));
+    }
+  } catch (err) {
+    showToast('Full screen is not available here');
+  }
+}
+
+function syncFullscreen() {
+  const on = !!fsElement();
+  document.body.classList.toggle('is-fullscreen', on);
+  btnFullscreen.title = on ? 'Leave full screen (F)' : 'Full screen (F)';
+  resizeCanvas();
+  updateSelBar();
+}
+
+if (fsSupported) {
+  btnFullscreen.hidden = false;
+  btnFullscreen.addEventListener('click', (e) => { e.stopPropagation(); closeDropdowns(); toggleFullscreen(); });
+  document.addEventListener('fullscreenchange', syncFullscreen);
+  document.addEventListener('webkitfullscreenchange', syncFullscreen);
+}
+
+// ─── Stale copy check ───
+// iPad Safari can keep showing an old copy of the board for a while after an
+// update. Fetch the live page; when its file versions differ from this one,
+// reload once from a fresh URL. A host already running a live session is
+// left alone.
+(function checkForUpdate() {
+  const url = new URL(location.href);
+  if (url.searchParams.has('fresh')) {
+    url.searchParams.delete('fresh');
+    history.replaceState(null, '', url);
+  }
+  if (!/^https?:$/.test(location.protocol)) return;
+  const versions = (root) => [...root.querySelectorAll('script[src], link[rel="stylesheet"][href]')]
+    .map(el => el.getAttribute('src') || el.getAttribute('href'))
+    .filter(u => /[?&]v=/.test(u)).join('|');
+  fetch(`${location.pathname}?fresh=${Date.now().toString(36)}`, { cache: 'no-store' })
+    .then(r => (r.ok ? r.text() : null))
+    .then(html => {
+      if (!html) return;
+      // Read this page's versions now, not when this script ran: the tags
+      // after it (live.js) were not parsed yet then.
+      const mine = versions(document);
+      const latest = versions(new DOMParser().parseFromString(html, 'text/html'));
+      if (!latest || latest === mine) return;
+      const KEY = 'whiteboard.freshFor';
+      if (sessionStorage.getItem(KEY) === latest) return; // tried once already
+      if (window.Live && Live.isLive() && !Live.isGuest()) return;
+      sessionStorage.setItem(KEY, latest);
+      const next = new URL(location.href);
+      next.searchParams.set('fresh', Date.now().toString(36));
+      location.replace(next);
+    })
+    .catch(() => {});
+})();
 
 // ─── Initial render ───
 buildPalette();

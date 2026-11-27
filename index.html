@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Whiteboard">
   <meta name="theme-color" content="#141418">
   <title>Whiteboard</title>
-  <link rel="stylesheet" href="styles.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
   <header>
@@ -376,6 +376,18 @@
         </svg>
         <span class="label">Export PDF</span>
       </button>
+
+      <!-- Full screen: hide the browser's address bar and tabs (F) -->
+      <button class="tool-btn" id="btnFullscreen" title="Full screen (F)" hidden>
+        <svg class="fs-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+          <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+        </svg>
+        <svg class="fs-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+          <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -437,7 +449,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
-  <script src="whiteboard.js?v=23"></script>
+  <script src="whiteboard.js?v=24"></script>
   <script src="live.js?v=5"></script>
 </body>
 </html>

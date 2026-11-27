@@ -45,6 +45,8 @@ Whiteboard is a lightweight, zero-dependency drawing application designed for cl
 | **QR code button** | The QR icon in the header shows the join code full screen in one click, starting a live session if none is running |
 | **Scan to join** | The scan icon beside it opens the device camera (iPad or phone); point it at a session's QR code and the device joins that session straight away, with no code to type |
 | **Apple Pencil / stylus** | Pressure-sensitive line width and a light stabiliser tuned for a stylus. **Pencil-only mode with palm rejection**: an iPad starts Pencil-only, and any device switches to it once a stylus is used and remembers it. Only the Pencil writes on the board. Fingers still press the toolbar, tools, the `+` page button, the page strip, the rails and the selection bar, and on the board they use gestures: **swipe left / right** to turn the page, **double-tap** for the next pen colour, **triple-tap** for the black pen. A touch that lands while the Pencil is down or just after it lifts, several contacts at once, or a palm-sized contact is ignored. The hand button turns finger drawing on. A resting palm or long press never selects the page or opens the iPad Copy / Look Up menu |
+| **Full screen** | The full-screen button at the far right of the header (or `F`) hides the browser's address bar and tabs, on a PC or an iPad. On an iPad, *Share → Add to Home Screen* also opens the board as its own app with no browser bar |
+| **Always the latest version** | On opening, the board checks the live site and reloads once if the device is showing an older copy (iPad Safari can hold one for a while) |
 | **Paper styles** | Whiteboard, paper or blackboard surface, each with a blank, lined, dotted or grid pattern; ink is recoloured when switching between light and dark |
 | **Multi-page support** | Add, delete, navigate, and reset pages with live thumbnail previews |
 | **Colour palette** | 26 swatches plus a custom colour picker; applies to the pen and to selected shapes |
@@ -161,6 +163,7 @@ Or use the live version: **[https://alfredang.github.io/whiteboard/](https://alf
 | `Ctrl/Cmd + A` | Next pen colour (`Shift` for previous) |
 | `Shift` + drag | Straight pen stroke, 45° lines, squares and circles |
 | Hold still while drawing | Tidy the stroke into a line or shape |
+| `F` | Full screen on / off |
 | `PgUp` / `Ctrl + ←` | Previous page |
 | `PgDn` / `Ctrl + →` | Next page |
 
