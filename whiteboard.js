@@ -952,7 +952,27 @@ penLayer.height = canvas.height;
 const penLayerCtx = penLayer.getContext('2d');
 penLayerCtx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
 let penLayerFor = null; // the stroke the frozen layer was built around
+let penPredicted = null; // where the stylus is predicted to be next: drawn, never stored
 function invalidatePenLayer() { penLayerFor = null; }
+
+// A short line from the stroke's last point through the browser's predicted
+// stylus positions, so the ink keeps up with the Pencil tip. It is redrawn
+// from scratch each frame, so a wrong guess simply vanishes.
+function drawPredicted(c, s) {
+  if (!penPredicted || !penPredicted.length || !s.pts.length) return;
+  const L = s.pts[s.pts.length - 1];
+  c.save();
+  c.globalCompositeOperation = 'source-over';
+  c.strokeStyle = s.color;
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  c.lineWidth = L[2] == null ? s.lineWidth : pressureWidth(s.lineWidth, L);
+  c.beginPath();
+  c.moveTo(L[0], L[1]);
+  for (const q of penPredicted) c.lineTo(q.x, q.y);
+  c.stroke();
+  c.restore();
+}
 
 function render() {
   if (isDrawing && currentTool === 'pen' && activeStroke && shapes[shapes.length - 1] === activeStroke) {
@@ -964,6 +984,8 @@ function render() {
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(penLayer, 0, 0, W, H);
     drawShape(ctx, activeStroke);
+    // Plain ink only: a textured or see-through brush would show the join.
+    if (!penStraight && brushOf(activeStroke.brush) === DEFAULT_BRUSH) drawPredicted(ctx, activeStroke);
     return;
   }
   penLayerFor = null;
@@ -2065,8 +2087,11 @@ brushSize.addEventListener('input', () => {
 colorPicker.addEventListener('input', () => applyColor(colorPicker.value));
 
 // ─── Position Helper ───
+// The canvas box, read once per pointer event (a pen move carries many
+// samples, and each read could force a layout).
+let eventRect = null;
 function getPosition(e) {
-  const rect = canvas.getBoundingClientRect();
+  const rect = eventRect || canvas.getBoundingClientRect();
   const scaleX = W / rect.width;
   const scaleY = H / rect.height;
   if (e.touches && e.touches.length > 0) {
@@ -2603,12 +2628,15 @@ let brush = null;        // stabilised pen position
 let penStylus = false;   // the current stroke comes from a stylus (Apple Pencil, Surface Pen)
 let brushP = 0.5;        // smoothed stylus pressure
 let penPressure = false; // the current stroke records pressure (stylus + a pressure brush)
-const STYLUS_STRING = 1.5; // a stylus is steady already: cap the stabiliser string here
+// A stylus is steady already, and any string makes the ink trail the tip.
+const STYLUS_STRING = 0;
 
 function r1(v) { return Math.round(v * 10) / 10; }
 // Pressure of a pointer event, or null when the device does not report one.
+// A stylus that reports 0 (some do on the first contact) counts as a light touch.
 function pressureOf(e) {
-  return e && e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : null;
+  if (!e || e.pointerType !== 'pen') return null;
+  return e.pressure > 0 ? e.pressure : 0.5;
 }
 let penPointer = null;   // latest raw pointer position
 let penStraight = false; // Shift held: the stroke is a straight segment
@@ -2674,7 +2702,7 @@ function penStart(pos, pressure) {
 function penMove(pos, shift, pressure) {
   if (!activeStroke) return;
   penPointer = pos;
-  if (penStylus && pressure != null) brushP += (pressure - brushP) * 0.4;
+  if (penStylus && pressure != null) brushP += (pressure - brushP) * 0.6;
   if (!holdAnchor || dist(pos, holdAnchor) > HOLD_SLOP) armHold(pos);
 
   if (shift) {
@@ -2690,7 +2718,7 @@ function penMove(pos, shift, pressure) {
 
   const r = penStylus ? Math.min(SMOOTH_STRING, STYLUS_STRING) : SMOOTH_STRING;
   const d = dist(pos, brush);
-  if (d <= r) return;
+  if (d === 0 || d <= r) return;
   const k = (d - r) / d;
   brush.x += (pos.x - brush.x) * k;
   brush.y += (pos.y - brush.y) * k;
@@ -2706,6 +2734,7 @@ function penEnd() {
   activeStroke = null;
   brush = null;
   penPointer = null;
+  penPredicted = null;
   holdAnchor = null;
 }
 
@@ -2977,6 +3006,9 @@ function draw(e) {
     const batch = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     if (batch.length) for (const ce of batch) penMove(getPosition(ce), e.shiftKey, pressureOf(ce));
     else penMove(pos, e.shiftKey, pressureOf(e));
+    // A stylus also gets the browser's guess at its next positions (drawn, not kept).
+    const ahead = penStylus && e.getPredictedEvents ? e.getPredictedEvents() : [];
+    penPredicted = ahead.length ? ahead.map(getPosition) : null;
   }
   lastX = pos.x;
   lastY = pos.y;
@@ -3145,7 +3177,7 @@ function abortDraw() {
     const i = shapes.indexOf(activeStroke);
     if (i !== -1) shapes.splice(i, 1);
     clearTimeout(holdTimer);
-    activeStroke = null; brush = null; penPointer = null; holdAnchor = null;
+    activeStroke = null; brush = null; penPointer = null; penPredicted = null; holdAnchor = null;
     isDrawing = false;
     render();
     if (window.Live) Live.localChanged();
@@ -3302,11 +3334,18 @@ canvas.addEventListener('pointermove', (e) => {
   if (fingerStroke && e.pointerId === activePointer) {
     fingerStroke.reach = Math.max(fingerStroke.reach, Math.hypot(e.clientX - fingerStroke.x, e.clientY - fingerStroke.y));
   }
-  draw(e);
-  const pos = getPosition(e);
-  statusCoords.textContent = `${Math.round(pos.x)}, ${Math.round(pos.y)}`;
-  updateEraserCursor(pos);
-  if (showsSelection() && !isDrawing) updateSelectCursor(pos);
+  eventRect = canvas.getBoundingClientRect();
+  try {
+    draw(e);
+    const pos = getPosition(e);
+    // No page updates mid-stroke: they would cost layout time on every pen sample.
+    if (isDrawing && currentTool === 'pen') { lastPointer = pos; return; }
+    statusCoords.textContent = `${Math.round(pos.x)}, ${Math.round(pos.y)}`;
+    updateEraserCursor(pos);
+    if (showsSelection() && !isDrawing) updateSelectCursor(pos);
+  } finally {
+    eventRect = null;
+  }
 });
 
 function endPointer(e) {
